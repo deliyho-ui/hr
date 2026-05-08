@@ -1,8 +1,5 @@
 {
   "name": "hr-ai-dashboard-demo",
   "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "build": "echo \"Static HTML demo - no build needed\""
-  }
+  "private": true
 }
