@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /candidate-cvs/{candidateId}/{fileName} {
+      allow create: if isValidCvUpload(candidateId);
+      allow read: if request.auth != null;
+      allow update, delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    function isValidCvUpload(candidateId) {
+      return request.resource != null
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType.matches(
+          "application/pdf|application/msword|application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        && request.resource.metadata.candidateId == candidateId
+        && request.resource.metadata.source == "qr-landing-page";
+    }
+  }
+}

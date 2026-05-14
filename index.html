@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HR-AI | מערכת ניהול גיוס</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <section class="login-view" id="loginView" aria-labelledby="loginTitle">
+      <form class="login-card" id="loginForm">
+        <p class="eyebrow">HR-AI</p>
+        <h1 id="loginTitle">כניסה למערכת גיוס</h1>
+        <p>התחברו כדי לצפות במועמדים, קורות חיים, שאלונים וסטטוסי מיון.</p>
+
+        <label>
+          <span>אימייל</span>
+          <input id="loginEmail" name="email" type="email" autocomplete="email" required />
+        </label>
+        <label>
+          <span>סיסמה</span>
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" required />
+        </label>
+
+        <p class="status-line" id="loginStatus" role="status" aria-live="polite"></p>
+        <button class="button button-primary" type="submit">כניסה</button>
+      </form>
+    </section>
+
+    <div class="app hidden" id="appShell">
+      <aside class="sidebar" aria-label="ניווט ראשי">
+        <div class="brand">
+          <div class="brand-mark">HR</div>
+          <div>
+            <strong>HR-AI</strong>
+            <span>מערכת ניהול גיוס</span>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="active" type="button" data-route="dashboard">דאשבורד ראשי</button>
+          <button type="button" data-route="full">מאגר מלא</button>
+          <button type="button" data-route="filtered">מאגר מסונן</button>
+          <button type="button" data-route="manual">ממתינים לבדיקה</button>
+          <button type="button" data-route="stars">מומלצים בכוכב</button>
+          <button type="button" data-route="settings">הגדרות סף</button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span id="userEmail">מחובר</span>
+          <button class="button button-ghost" id="logoutButton" type="button">יציאה</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">תמונת מצב</p>
+            <h1 id="viewTitle">דאשבורד ראשי</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="button button-secondary" id="refreshButton" type="button">רענון נתונים</button>
+          </div>
+        </header>
+
+        <section class="kpi-grid" aria-label="מדדי גיוס">
+          <article class="kpi">
+            <span>מאגר מלא</span>
+            <strong id="kpiTotal">0</strong>
+          </article>
+          <article class="kpi">
+            <span>מאגר מסונן</span>
+            <strong id="kpiGreen">0</strong>
+          </article>
+          <article class="kpi">
+            <span>ממתינים לבדיקה</span>
+            <strong id="kpiManual">0</strong>
+          </article>
+          <article class="kpi">
+            <span>חסר ניתוח AI</span>
+            <strong id="kpiMissingAi">0</strong>
+          </article>
+          <article class="kpi">
+            <span>מומלצים בכוכב</span>
+            <strong id="kpiStars">0</strong>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <section class="panel candidates-panel" aria-labelledby="tableTitle">
+            <div class="panel-header">
+              <div>
+                <h2 id="tableTitle">מאגר מועמדים</h2>
+                <p id="tableSubtitle">כל המועמדים שנכנסו מדף הנחיתה.</p>
+              </div>
+              <div class="filters">
+                <input id="searchInput" type="search" placeholder="חיפוש שם, טלפון, עיר..." />
+                <select id="colorFilter" aria-label="סינון לפי צבע">
+                  <option value="all">כל הצבעים</option>
+                  <option value="green">ירוקים</option>
+                  <option value="orange">כתומים</option>
+                  <option value="gray">אפורים</option>
+                  <option value="red">אדומים</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>מועמד</th>
+                    <th>סיווג</th>
+                    <th>AI</th>
+                    <th>סטטוס תהליך</th>
+                    <th>זמינות</th>
+                    <th>תאריך</th>
+                  </tr>
+                </thead>
+                <tbody id="candidateRows"></tbody>
+              </table>
+            </div>
+
+            <div class="empty-state hidden" id="emptyState">
+              <strong>אין מועמדים להצגה</strong>
+              <span>שנה סינון או המתן למועמדים מדף הנחיתה.</span>
+            </div>
+          </section>
+
+          <aside class="panel detail-panel" id="detailPanel" aria-labelledby="detailTitle">
+            <div class="detail-empty" id="detailEmpty">
+              <strong>בחר מועמד</strong>
+              <span>לחיצה על שורה תפתח תקציר, קורות חיים, שאלון ופעולות מגייס.</span>
+            </div>
+
+            <div class="detail-content hidden" id="detailContent">
+              <div class="detail-head">
+                <div>
+                  <h2 id="detailTitle">שם מועמד</h2>
+                  <p id="detailMeta">טלפון • עיר</p>
+                </div>
+                <span class="badge gray" id="detailBadge">אפור</span>
+              </div>
+
+              <div class="ai-alert hidden" id="aiAlert">
+                <strong>חסר ניתוח AI</strong>
+                <span>המועמד מוצג לפי קורות החיים והשאלון בלבד. אפשר להמשיך טיפול ידני.</span>
+              </div>
+
+              <section class="detail-section">
+                <h3>תקציר</h3>
+                <p id="aiSummary">אין תקציר זמין.</p>
+              </section>
+
+              <section class="detail-section">
+                <h3>שאלון</h3>
+                <dl class="answers">
+                  <dt>רקע</dt>
+                  <dd id="detailBackground">-</dd>
+                  <dt>רישיון</dt>
+                  <dd id="detailLicense">-</dd>
+                  <dt>מה מושך בתפקיד</dt>
+                  <dd id="detailMotivation">-</dd>
+                  <dt>ניסיון רלוונטי</dt>
+                  <dd id="detailExperience">-</dd>
+                </dl>
+              </section>
+
+              <section class="detail-section">
+                <h3>פעולות מגייס</h3>
+                <div class="action-grid">
+                  <label>
+                    <span>סיווג ידני</span>
+                    <select id="manualClassification">
+                      <option value="green">ירוק</option>
+                      <option value="orange">כתום</option>
+                      <option value="gray">אפור</option>
+                      <option value="red">אדום</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>שלב בתהליך</span>
+                    <select id="processStage">
+                      <option value="submitted">הוגש</option>
+                      <option value="screened">סינון ראשוני</option>
+                      <option value="phone">שיחה</option>
+                      <option value="physical">בדיקה פיזית</option>
+                      <option value="interview">ראיון</option>
+                      <option value="decision">החלטה</option>
+                    </select>
+                  </label>
+                  <label class="wide">
+                    <span>הערת מגייס</span>
+                    <textarea id="recruiterNote" rows="3"></textarea>
+                  </label>
+                </div>
+                <div class="detail-actions">
+                  <button class="button button-secondary" id="toggleStarButton" type="button">סימון כוכב</button>
+                  <button class="button button-primary" id="saveCandidateButton" type="button">שמירת עדכון</button>
+                </div>
+                <p class="status-line" id="saveStatus" role="status" aria-live="polite"></p>
+              </section>
+
+              <section class="detail-section">
+                <h3>קורות חיים</h3>
+                <button class="button button-secondary" id="openCvButton" type="button">פתיחת קובץ</button>
+              </section>
+
+              <section class="detail-section">
+                <h3>סרגל תהליך</h3>
+                <div class="stage-bar" id="stageBar"></div>
+              </section>
+
+              <section class="detail-section">
+                <h3>היסטוריית שינויים</h3>
+                <ul class="history-list" id="historyList"></ul>
+              </section>
+            </div>
+          </aside>
+        </section>
+
+        <section class="panel settings-panel hidden" id="settingsPanel" aria-labelledby="settingsTitle">
+          <h2 id="settingsTitle">הגדרות סף ומיון</h2>
+          <p>
+            ההגדרות כאן מיועדות לשלב הבא: הן יישמרו ב־Firestore ויישלחו לפונקציית
+            ה־AI כמדיניות מיון. ה־AI לא "יושב" ב־Firebase; Firebase שומר את הנתונים,
+            ופונקציית שרת קוראת אותם, מפעילה AI, ומחזירה תוצאה למועמד.
+          </p>
+          <div class="settings-grid">
+            <label>
+              <span>סף ירוק</span>
+              <input type="number" value="80" min="0" max="100" />
+            </label>
+            <label>
+              <span>סף כתום</span>
+              <input type="number" value="60" min="0" max="100" />
+            </label>
+            <label>
+              <span>חובת רישיון נהיגה</span>
+              <select>
+                <option>כן</option>
+                <option>לא</option>
+                <option>יתרון בלבד</option>
+              </select>
+            </label>
+            <label class="wide">
+              <span>הנחיות מיון ל־AI</span>
+              <textarea rows="5">בדוק התאמה לפי רקע ביטחוני, זמינות, חוסן אישי, עבודה בצוות ועמידה בתנאי הסף. החזר המלצה מנומקת אך לא החלטה סופית.</textarea>
+            </label>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
