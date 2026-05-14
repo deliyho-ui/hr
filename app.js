@@ -11,6 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import QRCode from "https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm";
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -68,6 +69,7 @@ const els = {
   logoutButton: document.querySelector("#logoutButton"),
   refreshButton: document.querySelector("#refreshButton"),
   addCandidateButton: document.querySelector("#addCandidateButton"),
+  exportCsvButton: document.querySelector("#exportCsvButton"),
   navButtons: [...document.querySelectorAll("[data-route]")],
   viewTitle: document.querySelector("#viewTitle"),
   kpiTotal: document.querySelector("#kpiTotal"),
@@ -103,6 +105,12 @@ const els = {
   stageBar: document.querySelector("#stageBar"),
   historyList: document.querySelector("#historyList"),
   settingsPanel: document.querySelector("#settingsPanel"),
+  profileForm: document.querySelector("#profileForm"),
+  profileDisplayName: document.querySelector("#profileDisplayName"),
+  profileRole: document.querySelector("#profileRole"),
+  profileEmail: document.querySelector("#profileEmail"),
+  profileStatus: document.querySelector("#profileStatus"),
+  auditList: document.querySelector("#auditList"),
   addCandidateModal: document.querySelector("#addCandidateModal"),
   addCandidateForm: document.querySelector("#addCandidateForm"),
   closeAddModalButton: document.querySelector("#closeAddModalButton"),
@@ -129,8 +137,11 @@ const stageLabels = {
 const state = {
   route: "dashboard",
   candidates: [],
+  auditLogs: [],
+  recruiterProfile: null,
   selectedId: null,
   unsubscribe: null,
+  auditUnsubscribe: null,
   mfaResolver: null,
   totpSecret: null,
 };
@@ -152,6 +163,8 @@ els.loginForm.addEventListener("submit", async (event) => {
 });
 
 els.logoutButton.addEventListener("click", () => signOut(auth));
+els.profileForm.addEventListener("submit", saveRecruiterProfile);
+els.exportCsvButton.addEventListener("click", exportCandidatesCsv);
 els.mfaSetupForm.addEventListener("submit", completeTotpEnrollment);
 els.mfaVerifyForm.addEventListener("submit", completeTotpSignIn);
 els.cancelTotpSetupButton.addEventListener("click", () => signOut(auth));
@@ -180,6 +193,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!user) {
     showAuthCard("login");
     stopCandidatesListener();
+    stopAuditListener();
     return;
   }
 
@@ -220,6 +234,7 @@ function openApp(user) {
   els.loginView.classList.add("hidden");
   els.appShell.classList.remove("hidden");
   startCandidatesListener();
+  startAuditListener();
 }
 
 async function startTotpEnrollment(user) {
@@ -308,21 +323,39 @@ async function completeTotpSignIn(event) {
 }
 
 async function setUserProfile(user) {
-  els.userDisplayName.textContent = user.displayName || user.email || "מגייס";
-  els.userRole.textContent = "מגייס";
-  els.userEmail.textContent = user.email || "-";
+  const fallbackProfile = {
+    displayName: user.displayName || user.email || "מגייס",
+    role: "מגייס",
+    email: user.email || "",
+    uid: user.uid,
+  };
+
+  applyRecruiterProfile(fallbackProfile);
 
   try {
     const profileSnapshot = await getDoc(doc(db, "recruiters", user.uid));
     if (!profileSnapshot.exists()) return;
 
     const profile = profileSnapshot.data();
-    els.userDisplayName.textContent = profile.displayName || user.displayName || user.email || "מגייס";
-    els.userRole.textContent = profile.role || "מגייס";
-    els.userEmail.textContent = profile.email || user.email || "-";
+    applyRecruiterProfile({
+      displayName: profile.displayName || fallbackProfile.displayName,
+      role: profile.role || "מגייס",
+      email: profile.email || fallbackProfile.email,
+      uid: user.uid,
+    });
   } catch (error) {
     console.warn("Recruiter profile was not loaded", error);
   }
+}
+
+function applyRecruiterProfile(profile) {
+  state.recruiterProfile = profile;
+  els.userDisplayName.textContent = profile.displayName || profile.email || "מגייס";
+  els.userRole.textContent = profile.role || "מגייס";
+  els.userEmail.textContent = profile.email || "-";
+  els.profileDisplayName.value = profile.displayName || "";
+  els.profileRole.value = profile.role || "מגייס";
+  els.profileEmail.value = profile.email || "";
 }
 
 function startCandidatesListener() {
@@ -358,6 +391,30 @@ function stopCandidatesListener() {
   if (state.unsubscribe) {
     state.unsubscribe();
     state.unsubscribe = null;
+  }
+}
+
+function startAuditListener() {
+  stopAuditListener();
+  const auditQuery = query(collection(db, "auditLogs"), orderBy("createdAt", "desc"));
+
+  state.auditUnsubscribe = onSnapshot(
+    auditQuery,
+    (snapshot) => {
+      state.auditLogs = snapshot.docs.slice(0, 25).map((item) => ({ id: item.id, ...item.data() }));
+      renderAuditLogs();
+    },
+    (error) => {
+      console.warn("Audit logs were not loaded", error);
+      els.auditList.innerHTML = `<li>לא ניתן לטעון לוג פעולות. בדוק הרשאות Firestore.</li>`;
+    }
+  );
+}
+
+function stopAuditListener() {
+  if (state.auditUnsubscribe) {
+    state.auditUnsubscribe();
+    state.auditUnsubscribe = null;
   }
 }
 
@@ -408,6 +465,7 @@ function render() {
   renderKpis();
   renderRows(routeConfig);
   renderDetail();
+  renderAuditLogs();
 }
 
 function getRouteConfig() {
@@ -576,6 +634,49 @@ function renderHistory(history) {
     .join("");
 }
 
+function renderAuditLogs() {
+  if (!els.auditList) return;
+  if (!state.auditLogs.length) {
+    els.auditList.innerHTML = `<li>אין פעולות להצגה עדיין.</li>`;
+    return;
+  }
+
+  els.auditList.innerHTML = state.auditLogs
+    .map((item) => `
+      <li>
+        <strong>${escapeHtml(item.label || item.action || "פעולה")}</strong>
+        <span>${escapeHtml(item.recruiterName || item.recruiterEmail || "מגייס")} · ${formatDate(item.createdAt)}</span>
+      </li>
+    `)
+    .join("");
+}
+
+async function saveRecruiterProfile(event) {
+  event.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return;
+
+  const profile = {
+    uid: user.uid,
+    displayName: els.profileDisplayName.value.trim(),
+    role: els.profileRole.value.trim() || "מגייס",
+    email: user.email || els.profileEmail.value.trim(),
+    updatedAt: serverTimestamp(),
+  };
+
+  setStatus(els.profileStatus, "שומר פרופיל...");
+
+  try {
+    await setDoc(doc(db, "recruiters", user.uid), profile, { merge: true });
+    applyRecruiterProfile(profile);
+    await logAudit("profile_update", "עדכון פרופיל מגייס");
+    setStatus(els.profileStatus, "הפרופיל נשמר.");
+  } catch (error) {
+    console.error(error);
+    setStatus(els.profileStatus, "לא ניתן לשמור פרופיל. בדוק הרשאות.", true);
+  }
+}
+
 async function saveCandidateUpdate() {
   const candidate = getSelectedCandidate();
   if (!candidate) return;
@@ -601,6 +702,7 @@ async function saveCandidateUpdate() {
 
   try {
     await updateDoc(doc(db, "candidates", candidate.id), update);
+    await logAudit("candidate_update", `עדכון מועמד: ${candidate.fullName}`, candidate);
     setStatus(els.saveStatus, "נשמר בהצלחה.");
   } catch (error) {
     console.error(error);
@@ -625,6 +727,11 @@ async function toggleSelectedStar() {
         },
       ],
     });
+    await logAudit(
+      !candidate.isStarred ? "candidate_star" : "candidate_unstar",
+      !candidate.isStarred ? `סימון כוכב: ${candidate.fullName}` : `הסרת כוכב: ${candidate.fullName}`,
+      candidate
+    );
   } catch (error) {
     console.error(error);
     setStatus(els.saveStatus, "לא ניתן לעדכן כוכב. בדוק הרשאות.", true);
@@ -638,6 +745,7 @@ async function openSelectedCv() {
   try {
     const url = await getDownloadURL(ref(storage, candidate.cvFile.storagePath));
     window.open(url, "_blank", "noopener");
+    await logAudit("cv_open", `פתיחת קורות חיים: ${candidate.fullName}`, candidate);
   } catch (error) {
     console.error(error);
     setStatus(els.saveStatus, "לא ניתן לפתוח קורות חיים. בדוק הרשאות Storage.", true);
@@ -728,6 +836,10 @@ async function addManualCandidate(event) {
     });
 
     state.selectedId = candidateId;
+    await logAudit("candidate_create", `הוספת מועמד ידנית: ${String(formData.get("fullName") || "").trim()}`, {
+      id: candidateId,
+      fullName: String(formData.get("fullName") || "").trim(),
+    });
     setStatus(els.addCandidateStatus, "המועמד נוסף בהצלחה.");
     setTimeout(closeAddCandidateModal, 650);
   } catch (error) {
@@ -756,6 +868,7 @@ async function deleteSelectedCandidate() {
       }
     }
 
+    await logAudit("candidate_delete", `מחיקת מועמד: ${candidate.fullName}`, candidate);
     await deleteDoc(doc(db, "candidates", candidate.id));
     state.selectedId = state.candidates.find((item) => item.id !== candidate.id)?.id || null;
     setStatus(els.saveStatus, "");
@@ -763,6 +876,76 @@ async function deleteSelectedCandidate() {
     console.error(error);
     setStatus(els.saveStatus, "לא ניתן למחוק. בדוק הרשאות Firestore / Storage.", true);
   }
+}
+
+async function logAudit(action, label, candidate = null) {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  const profile = state.recruiterProfile || {};
+  const payload = {
+    action,
+    label,
+    recruiterUid: user.uid,
+    recruiterName: profile.displayName || user.displayName || user.email || "מגייס",
+    recruiterEmail: user.email || profile.email || "",
+    candidateId: candidate?.id || "",
+    candidateName: candidate?.fullName || "",
+    createdAt: serverTimestamp(),
+  };
+
+  try {
+    await addDoc(collection(db, "auditLogs"), payload);
+  } catch (error) {
+    console.warn("Audit log was not saved", error);
+  }
+}
+
+function exportCandidatesCsv() {
+  if (!state.candidates.length) {
+    window.alert("אין מועמדים לייצוא.");
+    return;
+  }
+
+  const headers = [
+    "שם מלא",
+    "טלפון",
+    "אימייל",
+    "עיר",
+    "סיווג",
+    "סטטוס AI",
+    "שלב בתהליך",
+    "זמינות",
+    "הומלץ על ידי",
+    "הערת מגייס",
+    "תאריך יצירה",
+  ];
+
+  const rows = state.candidates.map((candidate) => [
+    candidate.fullName,
+    candidate.phone,
+    candidate.email,
+    candidate.city,
+    labels[candidate.classification] || candidate.classification,
+    candidate.aiStatus,
+    stageLabels[candidate.processStage] || candidate.processStage,
+    candidate.availability,
+    candidate.referredBy,
+    candidate.recruiterNote,
+    candidate.createdAt ? candidate.createdAt.toLocaleString("he-IL") : "",
+  ]);
+
+  const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `hr-ai-candidates-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  logAudit("export_csv", "ייצוא מאגר מועמדים ל־CSV");
 }
 
 function getSelectedCandidate() {
@@ -789,6 +972,14 @@ function safeFileName(fileName) {
     .replace(/[^\w.\-\u0590-\u05ff]+/g, "-")
     .replace(/-+/g, "-")
     .slice(0, 120);
+}
+
+function csvCell(value) {
+  let text = String(value ?? "");
+  if (/^[=+\-@]/.test(text)) {
+    text = `'${text}`;
+  }
+  return `"${text.replaceAll('"', '""')}"`;
 }
 
 function setStatus(element, message, isError = false) {

@@ -105,6 +105,7 @@
           </div>
           <div class="topbar-actions">
             <button class="button button-primary" id="addCandidateButton" type="button">הוספת מועמד</button>
+            <button class="button button-secondary" id="exportCsvButton" type="button">ייצוא CSV</button>
             <button class="button button-secondary" id="refreshButton" type="button">רענון נתונים</button>
           </div>
         </header>
@@ -278,6 +279,30 @@
             ה־AI כמדיניות מיון. ה־AI לא "יושב" ב־Firebase; Firebase שומר את הנתונים,
             ופונקציית שרת קוראת אותם, מפעילה AI, ומחזירה תוצאה למועמד.
           </p>
+          <section class="settings-card" aria-labelledby="profileTitle">
+            <div>
+              <h3 id="profileTitle">פרופיל מגייס</h3>
+              <p>השם והתפקיד שמופיעים בדאשבורד ובלוג הפעולות.</p>
+            </div>
+            <form class="settings-grid" id="profileForm">
+              <label>
+                <span>שם תצוגה</span>
+                <input id="profileDisplayName" name="displayName" required />
+              </label>
+              <label>
+                <span>תפקיד</span>
+                <input id="profileRole" name="role" value="מגייס" required />
+              </label>
+              <label class="wide">
+                <span>אימייל</span>
+                <input id="profileEmail" name="email" type="email" readonly />
+              </label>
+              <div class="wide settings-actions">
+                <button class="button button-primary" type="submit">שמירת פרופיל</button>
+                <p class="status-line" id="profileStatus" role="status" aria-live="polite"></p>
+              </div>
+            </form>
+          </section>
           <div class="settings-grid">
             <label>
               <span>סף ירוק</span>
@@ -300,6 +325,15 @@
               <textarea rows="5">בדוק התאמה לפי רקע ביטחוני, זמינות, חוסן אישי, עבודה בצוות ועמידה בתנאי הסף. החזר המלצה מנומקת אך לא החלטה סופית.</textarea>
             </label>
           </div>
+          <section class="settings-card" aria-labelledby="auditTitle">
+            <div>
+              <h3 id="auditTitle">לוג פעולות אחרונות</h3>
+              <p>מעקב אחר פעולות משמעותיות שבוצעו בדאשבורד.</p>
+            </div>
+            <ul class="audit-list" id="auditList">
+              <li>אין פעולות להצגה עדיין.</li>
+            </ul>
+          </section>
         </section>
       </main>
     </div>

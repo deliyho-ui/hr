@@ -13,7 +13,13 @@ service cloud.firestore {
 
     match /recruiters/{recruiterId} {
       allow read: if request.auth != null && request.auth.uid == recruiterId;
-      allow write: if false;
+      allow create, update: if request.auth != null && request.auth.uid == recruiterId;
+      allow delete: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow read, create: if isSignedInRecruiter();
+      allow update, delete: if false;
     }
 
     match /{document=**} {
