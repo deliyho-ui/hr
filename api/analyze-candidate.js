@@ -3,8 +3,9 @@ const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 
 const MAX_CV_CHARS = 18000;
-const DEFAULT_AI_MODEL = "gpt-4.1-mini";
-const DEFAULT_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const DEFAULT_AI_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const DEFAULT_ANTHROPIC_VERSION = "2023-06-01";
 
 function initFirebaseAdmin() {
   if (admin.apps.length) return admin.app();
@@ -144,23 +145,31 @@ function trimCvText(text) {
 async function analyzeWithAi(candidate, settings, cvText) {
   const apiKey = getAiApiKey();
   if (!apiKey) {
-    throw new Error("Missing AI API key. Set CODEX_API_KEY or AI_API_KEY in Vercel.");
+    throw new Error("Missing Claude API key. Set ANTHROPIC_API_KEY in Vercel.");
   }
 
   const model = getAiModel();
-  const endpoint = process.env.AI_RESPONSES_URL || DEFAULT_RESPONSES_URL;
+  const endpoint = process.env.ANTHROPIC_API_URL || DEFAULT_ANTHROPIC_URL;
+  const anthropicVersion = process.env.ANTHROPIC_VERSION || DEFAULT_ANTHROPIC_VERSION;
   const prompt = buildPrompt(candidate, settings, cvText);
 
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      "x-api-key": apiKey,
+      "anthropic-version": anthropicVersion,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model,
-      input: prompt,
+      max_tokens: Number(process.env.ANTHROPIC_MAX_TOKENS || 1800),
       temperature: 0.2,
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
     }),
   });
 
@@ -169,25 +178,23 @@ async function analyzeWithAi(candidate, settings, cvText) {
     throw new Error(data.error?.message || "AI provider request failed");
   }
 
-  const output = data.output_text || extractResponseText(data);
+  const output = extractClaudeText(data);
   return parseAnalysis(output);
 }
 
 function getAiApiKey() {
-  return process.env.CODEX_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
+  return process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
 }
 
 function getAiModel() {
-  return process.env.CODEX_MODEL || process.env.AI_MODEL || process.env.OPENAI_MODEL || DEFAULT_AI_MODEL;
+  return process.env.ANTHROPIC_MODEL || process.env.CLAUDE_MODEL || process.env.AI_MODEL || DEFAULT_AI_MODEL;
 }
 
-function extractResponseText(data) {
-  if (typeof data?.output_text === "string") return data.output_text;
-  if (!Array.isArray(data?.output)) return "";
+function extractClaudeText(data) {
+  if (!Array.isArray(data?.content)) return "";
 
-  return data.output
-    .flatMap((item) => item.content || [])
-    .map((content) => content.text || content.output_text || "")
+  return data.content
+    .map((content) => content.text || "")
     .filter(Boolean)
     .join("\n");
 }
