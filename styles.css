@@ -65,24 +65,79 @@ textarea:focus-visible {
   align-items: stretch;
   gap: 18px;
   padding: 24px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
   background:
-    radial-gradient(circle at 78% 18%, rgba(15, 95, 140, 0.18), transparent 28%),
-    linear-gradient(180deg, #e9f2fb, #f7f9fc);
+    radial-gradient(circle at 78% 18%, rgba(14, 165, 233, 0.18), transparent 30%),
+    linear-gradient(180deg, #f8fbff, #eef4fb 58%, #f8fafc);
+}
+
+.login-view::before,
+.login-view::after,
+.aurora-field {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.login-view::before {
+  inset: -18%;
+  z-index: -3;
+  opacity: 0.7;
+  filter: blur(12px) saturate(1.15);
+  background-image:
+    repeating-linear-gradient(100deg, rgba(255, 255, 255, 0.96) 0%, rgba(255, 255, 255, 0.96) 7%, transparent 10%, transparent 12%, rgba(255, 255, 255, 0.9) 16%),
+    repeating-linear-gradient(100deg, rgba(14, 165, 233, 0.7) 10%, rgba(99, 102, 241, 0.42) 15%, rgba(56, 189, 248, 0.45) 20%, rgba(168, 85, 247, 0.25) 25%, rgba(14, 116, 144, 0.45) 30%);
+  background-size: 300% 100%, 210% 120%;
+  background-position: 50% 50%, 50% 50%;
+  animation: auroraShift 48s linear infinite;
+  mask-image: radial-gradient(ellipse at 92% 2%, #000 12%, transparent 72%);
+}
+
+.login-view::after {
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(circle at 10% 85%, rgba(15, 95, 140, 0.14), transparent 34%),
+    linear-gradient(90deg, rgba(248, 250, 252, 0.92), rgba(248, 250, 252, 0.56) 46%, rgba(15, 23, 42, 0.03));
+}
+
+.aurora-field {
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(15, 95, 140, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 95, 140, 0.08) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent);
+  opacity: 0.42;
+}
+
+@keyframes auroraShift {
+  from {
+    background-position: 50% 50%, 50% 50%;
+  }
+
+  to {
+    background-position: 350% 50%, 350% 50%;
+  }
 }
 
 .login-visual {
   width: min(500px, 100%);
   display: grid;
   align-content: end;
-  gap: 10px;
-  padding: 30px;
-  border: 1px solid rgba(219, 227, 238, 0.8);
+  gap: 12px;
+  padding: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: var(--radius);
   background:
-    linear-gradient(145deg, rgba(16, 24, 40, 0.92), rgba(15, 95, 140, 0.82)),
+    radial-gradient(circle at 20% 18%, rgba(125, 211, 252, 0.28), transparent 30%),
+    linear-gradient(145deg, rgba(15, 23, 42, 0.96), rgba(13, 68, 103, 0.92)),
     #101828;
   color: #fff;
-  box-shadow: var(--shadow);
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.24);
   overflow: hidden;
   position: relative;
 }
@@ -98,6 +153,20 @@ textarea:focus-visible {
   transform: rotate(-7deg);
 }
 
+.login-visual::after {
+  content: "";
+  position: absolute;
+  inset: 18px 18px auto auto;
+  width: 120px;
+  height: 120px;
+  border: 1px solid rgba(219, 234, 254, 0.26);
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 49%, rgba(219, 234, 254, 0.18) 50%, transparent 51%),
+    linear-gradient(0deg, transparent 49%, rgba(219, 234, 254, 0.18) 50%, transparent 51%);
+  opacity: 0.72;
+}
+
 .login-visual__mark {
   width: 58px;
   height: 58px;
@@ -108,6 +177,7 @@ textarea:focus-visible {
   color: var(--primary);
   font-weight: 900;
   position: relative;
+  box-shadow: 0 14px 34px rgba(14, 165, 233, 0.22);
 }
 
 .login-visual strong,
@@ -125,15 +195,55 @@ textarea:focus-visible {
   line-height: 1.6;
 }
 
+.login-visual__eyebrow {
+  color: #7dd3fc !important;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.login-visual__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  position: relative;
+}
+
+.login-visual__chips span {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(219, 234, 254, 0.22);
+  border-radius: 999px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eff6ff;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
 .login-card {
   width: min(440px, 100%);
   display: grid;
   gap: 16px;
   padding: 30px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(199, 209, 223, 0.74);
   border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 24px 76px rgba(21, 32, 51, 0.14);
+  backdrop-filter: blur(18px);
+  position: relative;
+}
+
+.login-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(90deg, var(--primary), #38bdf8, #6366f1);
 }
 
 .login-card h1,
@@ -268,6 +378,12 @@ textarea {
 
 .status-line.error {
   color: var(--red);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-view::before {
+    animation: none;
+  }
 }
 
 .app {
@@ -597,6 +713,14 @@ tbody tr.active {
 
 .answers dd {
   margin: -8px 0 0;
+}
+
+.compact-ai-list {
+  gap: 8px;
+}
+
+.compact-ai-list dt {
+  margin-top: 4px;
 }
 
 .action-grid,

@@ -90,6 +90,10 @@ const els = {
   detailBadge: document.querySelector("#detailBadge"),
   aiAlert: document.querySelector("#aiAlert"),
   aiSummary: document.querySelector("#aiSummary"),
+  aiRecommendation: document.querySelector("#aiRecommendation"),
+  aiStrengths: document.querySelector("#aiStrengths"),
+  aiRisks: document.querySelector("#aiRisks"),
+  aiQuestions: document.querySelector("#aiQuestions"),
   detailBackground: document.querySelector("#detailBackground"),
   detailLicense: document.querySelector("#detailLicense"),
   detailMotivation: document.querySelector("#detailMotivation"),
@@ -98,6 +102,7 @@ const els = {
   processStage: document.querySelector("#processStage"),
   recruiterNote: document.querySelector("#recruiterNote"),
   toggleStarButton: document.querySelector("#toggleStarButton"),
+  analyzeCandidateButton: document.querySelector("#analyzeCandidateButton"),
   saveCandidateButton: document.querySelector("#saveCandidateButton"),
   saveStatus: document.querySelector("#saveStatus"),
   openCvButton: document.querySelector("#openCvButton"),
@@ -110,6 +115,13 @@ const els = {
   profileRole: document.querySelector("#profileRole"),
   profileEmail: document.querySelector("#profileEmail"),
   profileStatus: document.querySelector("#profileStatus"),
+  screeningSettingsForm: document.querySelector("#screeningSettingsForm"),
+  greenThreshold: document.querySelector("#greenThreshold"),
+  orangeThreshold: document.querySelector("#orangeThreshold"),
+  licenseRequirement: document.querySelector("#licenseRequirement"),
+  screeningPrompt: document.querySelector("#screeningPrompt"),
+  successProfile: document.querySelector("#successProfile"),
+  screeningSettingsStatus: document.querySelector("#screeningSettingsStatus"),
   auditList: document.querySelector("#auditList"),
   addCandidateModal: document.querySelector("#addCandidateModal"),
   addCandidateForm: document.querySelector("#addCandidateForm"),
@@ -164,6 +176,7 @@ els.loginForm.addEventListener("submit", async (event) => {
 
 els.logoutButton.addEventListener("click", () => signOut(auth));
 els.profileForm.addEventListener("submit", saveRecruiterProfile);
+els.screeningSettingsForm.addEventListener("submit", saveScreeningSettings);
 els.exportCsvButton.addEventListener("click", exportCandidatesCsv);
 els.mfaSetupForm.addEventListener("submit", completeTotpEnrollment);
 els.mfaVerifyForm.addEventListener("submit", completeTotpSignIn);
@@ -174,6 +187,7 @@ els.searchInput.addEventListener("input", render);
 els.colorFilter.addEventListener("change", render);
 els.saveCandidateButton.addEventListener("click", saveCandidateUpdate);
 els.toggleStarButton.addEventListener("click", toggleSelectedStar);
+els.analyzeCandidateButton.addEventListener("click", analyzeSelectedCandidate);
 els.openCvButton.addEventListener("click", openSelectedCv);
 els.deleteCandidateButton.addEventListener("click", deleteSelectedCandidate);
 els.addCandidateButton.addEventListener("click", openAddCandidateModal);
@@ -235,6 +249,7 @@ function openApp(user) {
   els.appShell.classList.remove("hidden");
   startCandidatesListener();
   startAuditListener();
+  loadScreeningSettings();
 }
 
 async function startTotpEnrollment(user) {
@@ -447,6 +462,9 @@ function normalizeCandidate(id, data) {
     score: ai.score ?? null,
     summary: ai.summary || "",
     recommendation: ai.recommendation || "",
+    strengths: Array.isArray(ai.strengths) ? ai.strengths : [],
+    risks: Array.isArray(ai.risks) ? ai.risks : [],
+    questionsToAsk: Array.isArray(ai.questionsToAsk) ? ai.questionsToAsk : [],
     isStarred: Boolean(recruiter.isStarred || data.isStarred || data.referredBy || data.referralSource === "friend"),
     processStage: recruiter.processStage || data.processStage || "submitted",
     recruiterNote: recruiter.note || "",
@@ -601,6 +619,10 @@ function renderDetail() {
   els.detailBadge.className = `badge ${candidate.classification}`;
   els.aiAlert.classList.toggle("hidden", candidate.aiStatus === "completed");
   els.aiSummary.textContent = candidate.summary || "אין ניתוח AI זמין. יש לעבור על השאלון וקורות החיים ידנית.";
+  els.aiRecommendation.textContent = candidate.recommendation || "";
+  els.aiStrengths.textContent = candidate.strengths.length ? candidate.strengths.join(" · ") : "-";
+  els.aiRisks.textContent = candidate.risks.length ? candidate.risks.join(" · ") : "-";
+  els.aiQuestions.textContent = candidate.questionsToAsk.length ? candidate.questionsToAsk.join(" · ") : "-";
   els.detailBackground.textContent = candidate.securityBackground || "-";
   els.detailLicense.textContent = candidate.drivingLicense || "-";
   els.detailMotivation.textContent = candidate.motivation || "-";
@@ -610,6 +632,8 @@ function renderDetail() {
   els.recruiterNote.value = candidate.recruiterNote;
   els.toggleStarButton.textContent = candidate.isStarred ? "הסרת כוכב" : "סימון כוכב";
   els.openCvButton.disabled = !candidate.cvFile?.storagePath;
+  els.analyzeCandidateButton.disabled = candidate.aiStatus === "pending";
+  els.analyzeCandidateButton.textContent = candidate.aiStatus === "pending" ? "בניתוח..." : "ניתוח AI";
   renderStageBar(candidate.processStage);
   renderHistory(candidate.history);
 }
@@ -677,6 +701,46 @@ async function saveRecruiterProfile(event) {
   }
 }
 
+async function loadScreeningSettings() {
+  try {
+    const settingsSnapshot = await getDoc(doc(db, "settings", "screening"));
+    if (!settingsSnapshot.exists()) return;
+
+    const settings = settingsSnapshot.data();
+    els.greenThreshold.value = settings.greenThreshold ?? 80;
+    els.orangeThreshold.value = settings.orangeThreshold ?? 60;
+    els.licenseRequirement.value = settings.licenseRequirement || "יתרון בלבד";
+    els.screeningPrompt.value = settings.screeningPrompt || els.screeningPrompt.value;
+    els.successProfile.value = settings.successProfile || "";
+  } catch (error) {
+    console.warn("Screening settings were not loaded", error);
+  }
+}
+
+async function saveScreeningSettings(event) {
+  event.preventDefault();
+  setStatus(els.screeningSettingsStatus, "שומר הגדרות...");
+
+  const settings = {
+    greenThreshold: Number(els.greenThreshold.value || 80),
+    orangeThreshold: Number(els.orangeThreshold.value || 60),
+    licenseRequirement: els.licenseRequirement.value,
+    screeningPrompt: els.screeningPrompt.value.trim(),
+    successProfile: els.successProfile.value.trim(),
+    updatedAt: serverTimestamp(),
+    updatedBy: auth.currentUser?.uid || "",
+  };
+
+  try {
+    await setDoc(doc(db, "settings", "screening"), settings, { merge: true });
+    await logAudit("settings_update", "עדכון הגדרות סף ל־AI");
+    setStatus(els.screeningSettingsStatus, "הגדרות הסף נשמרו.");
+  } catch (error) {
+    console.error(error);
+    setStatus(els.screeningSettingsStatus, "לא ניתן לשמור הגדרות. בדוק הרשאות.", true);
+  }
+}
+
 async function saveCandidateUpdate() {
   const candidate = getSelectedCandidate();
   if (!candidate) return;
@@ -735,6 +799,42 @@ async function toggleSelectedStar() {
   } catch (error) {
     console.error(error);
     setStatus(els.saveStatus, "לא ניתן לעדכן כוכב. בדוק הרשאות.", true);
+  }
+}
+
+async function analyzeSelectedCandidate() {
+  const candidate = getSelectedCandidate();
+  const user = auth.currentUser;
+  if (!candidate || !user) return;
+
+  setStatus(els.saveStatus, "שולח לניתוח AI...");
+  els.analyzeCandidateButton.disabled = true;
+  els.analyzeCandidateButton.textContent = "בניתוח...";
+
+  try {
+    const token = await user.getIdToken();
+    const response = await fetch("/api/analyze-candidate", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ candidateId: candidate.id }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || "AI analysis failed");
+    }
+
+    await logAudit("ai_analyze", `ניתוח AI: ${candidate.fullName}`, candidate);
+    setStatus(els.saveStatus, "ניתוח AI הושלם.");
+  } catch (error) {
+    console.error(error);
+    setStatus(els.saveStatus, `ניתוח AI נכשל: ${error.message || "שגיאה לא ידועה"}`, true);
+  } finally {
+    els.analyzeCandidateButton.disabled = false;
+    els.analyzeCandidateButton.textContent = "ניתוח AI";
   }
 }
 
