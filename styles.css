@@ -150,6 +150,43 @@ textarea:focus-visible {
   line-height: 1.55;
 }
 
+.qr-box {
+  min-height: 230px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.qr-box img {
+  width: 210px;
+  height: 210px;
+  display: block;
+}
+
+.secret-box {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.secret-box span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.secret-box strong {
+  direction: ltr;
+  text-align: left;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--primary);

@@ -30,6 +30,44 @@
         <p class="status-line" id="loginStatus" role="status" aria-live="polite"></p>
         <button class="button button-primary" type="submit">כניסה</button>
       </form>
+
+      <form class="login-card hidden" id="mfaSetupForm">
+        <p class="eyebrow">אימות דו שלבי</p>
+        <h1>הפעלת קוד אבטחה</h1>
+        <p>סרוק את ה־QR באפליקציית Google Authenticator או Microsoft Authenticator, ואז הזן את הקוד שמופיע באפליקציה.</p>
+
+        <div class="qr-box">
+          <img id="totpQrImage" alt="QR להפעלת אימות דו שלבי" />
+        </div>
+        <div class="secret-box">
+          <span>קוד ידני</span>
+          <strong id="totpSecretKey">נטען...</strong>
+        </div>
+
+        <label>
+          <span>קוד מהאפליקציה</span>
+          <input id="totpSetupCode" name="totpSetupCode" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required />
+        </label>
+
+        <p class="status-line" id="totpSetupStatus" role="status" aria-live="polite"></p>
+        <button class="button button-primary" type="submit">הפעל אימות</button>
+        <button class="button button-secondary" id="cancelTotpSetupButton" type="button">יציאה</button>
+      </form>
+
+      <form class="login-card hidden" id="mfaVerifyForm">
+        <p class="eyebrow">אימות דו שלבי</p>
+        <h1>קוד אימות</h1>
+        <p>הזן את הקוד בן 6 הספרות מאפליקציית האימות שלך.</p>
+
+        <label>
+          <span>קוד אימות</span>
+          <input id="totpSignInCode" name="totpSignInCode" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required />
+        </label>
+
+        <p class="status-line" id="totpSignInStatus" role="status" aria-live="polite"></p>
+        <button class="button button-primary" type="submit">אימות וכניסה</button>
+        <button class="button button-secondary" id="cancelTotpSignInButton" type="button">חזרה</button>
+      </form>
     </section>
 
     <div class="app hidden" id="appShell">
@@ -52,7 +90,9 @@
         </nav>
 
         <div class="sidebar-footer">
-          <span id="userEmail">מחובר</span>
+          <strong id="userDisplayName">מחובר</strong>
+          <span id="userRole">מגייס</span>
+          <span id="userEmail">-</span>
           <button class="button button-ghost" id="logoutButton" type="button">יציאה</button>
         </div>
       </aside>

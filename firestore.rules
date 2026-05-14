@@ -11,6 +11,11 @@ service cloud.firestore {
       allow read, write: if isSignedInRecruiter();
     }
 
+    match /recruiters/{recruiterId} {
+      allow read: if request.auth != null && request.auth.uid == recruiterId;
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

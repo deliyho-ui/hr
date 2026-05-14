@@ -1,14 +1,20 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   getAuth,
+  getMultiFactorResolver,
+  multiFactor,
   onAuthStateChanged,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
+  TotpMultiFactorGenerator,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import QRCode from "https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm";
 import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getFirestore,
   onSnapshot,
   orderBy,
@@ -45,7 +51,19 @@ const els = {
   loginEmail: document.querySelector("#loginEmail"),
   loginPassword: document.querySelector("#loginPassword"),
   loginStatus: document.querySelector("#loginStatus"),
+  mfaSetupForm: document.querySelector("#mfaSetupForm"),
+  totpQrImage: document.querySelector("#totpQrImage"),
+  totpSecretKey: document.querySelector("#totpSecretKey"),
+  totpSetupCode: document.querySelector("#totpSetupCode"),
+  totpSetupStatus: document.querySelector("#totpSetupStatus"),
+  cancelTotpSetupButton: document.querySelector("#cancelTotpSetupButton"),
+  mfaVerifyForm: document.querySelector("#mfaVerifyForm"),
+  totpSignInCode: document.querySelector("#totpSignInCode"),
+  totpSignInStatus: document.querySelector("#totpSignInStatus"),
+  cancelTotpSignInButton: document.querySelector("#cancelTotpSignInButton"),
   appShell: document.querySelector("#appShell"),
+  userDisplayName: document.querySelector("#userDisplayName"),
+  userRole: document.querySelector("#userRole"),
   userEmail: document.querySelector("#userEmail"),
   logoutButton: document.querySelector("#logoutButton"),
   refreshButton: document.querySelector("#refreshButton"),
@@ -113,6 +131,8 @@ const state = {
   candidates: [],
   selectedId: null,
   unsubscribe: null,
+  mfaResolver: null,
+  totpSecret: null,
 };
 
 els.loginForm.addEventListener("submit", async (event) => {
@@ -123,7 +143,8 @@ els.loginForm.addEventListener("submit", async (event) => {
     await signInWithEmailAndPassword(auth, els.loginEmail.value.trim(), els.loginPassword.value);
   } catch (error) {
     if (error.code === "auth/multi-factor-auth-required") {
-      setStatus(els.loginStatus, "נדרש אימות דו שלבי. נחבר את מסך האימות בשלב הבא.", true);
+      state.mfaResolver = getMultiFactorResolver(auth, error);
+      showAuthCard("verify");
       return;
     }
     setStatus(els.loginStatus, "פרטי התחברות שגויים או משתמש לא מורשה.", true);
@@ -131,6 +152,10 @@ els.loginForm.addEventListener("submit", async (event) => {
 });
 
 els.logoutButton.addEventListener("click", () => signOut(auth));
+els.mfaSetupForm.addEventListener("submit", completeTotpEnrollment);
+els.mfaVerifyForm.addEventListener("submit", completeTotpSignIn);
+els.cancelTotpSetupButton.addEventListener("click", () => signOut(auth));
+els.cancelTotpSignInButton.addEventListener("click", resetToLogin);
 els.refreshButton.addEventListener("click", () => render());
 els.searchInput.addEventListener("input", render);
 els.colorFilter.addEventListener("change", render);
@@ -151,19 +176,154 @@ els.navButtons.forEach((button) => {
   });
 });
 
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
   if (!user) {
-    els.loginView.classList.remove("hidden");
-    els.appShell.classList.add("hidden");
+    showAuthCard("login");
     stopCandidatesListener();
     return;
   }
 
-  els.userEmail.textContent = user.email || "מחובר";
+  const enrolledFactors = multiFactor(user).enrolledFactors || [];
+  const hasTotp = enrolledFactors.some((factor) => factor.factorId === TotpMultiFactorGenerator.FACTOR_ID);
+
+  if (!hasTotp) {
+    await startTotpEnrollment(user);
+    return;
+  }
+
+  openApp(user);
+});
+
+function showAuthCard(cardName) {
+  els.loginView.classList.remove("hidden");
+  els.appShell.classList.add("hidden");
+  els.loginForm.classList.toggle("hidden", cardName !== "login");
+  els.mfaSetupForm.classList.toggle("hidden", cardName !== "setup");
+  els.mfaVerifyForm.classList.toggle("hidden", cardName !== "verify");
+
+  if (cardName === "login") {
+    state.mfaResolver = null;
+    state.totpSecret = null;
+    els.loginPassword.value = "";
+  }
+}
+
+function resetToLogin() {
+  state.mfaResolver = null;
+  setStatus(els.totpSignInStatus, "");
+  els.totpSignInCode.value = "";
+  showAuthCard("login");
+}
+
+function openApp(user) {
+  setUserProfile(user);
   els.loginView.classList.add("hidden");
   els.appShell.classList.remove("hidden");
   startCandidatesListener();
-});
+}
+
+async function startTotpEnrollment(user) {
+  showAuthCard("setup");
+  setStatus(els.totpSetupStatus, "יוצר קוד אבטחה...");
+  els.totpSetupCode.value = "";
+  els.totpQrImage.removeAttribute("src");
+  els.totpSecretKey.textContent = "נטען...";
+
+  try {
+    const session = await multiFactor(user).getSession();
+    state.totpSecret = await TotpMultiFactorGenerator.generateSecret(session);
+    const qrCodeUrl = state.totpSecret.generateQrCodeUrl(user.email || "HR-AI", "HR-AI");
+    els.totpQrImage.src = await QRCode.toDataURL(qrCodeUrl, {
+      width: 220,
+      margin: 1,
+      errorCorrectionLevel: "M",
+    });
+    els.totpSecretKey.textContent = state.totpSecret.secretKey;
+    setStatus(els.totpSetupStatus, "");
+  } catch (error) {
+    console.error(error);
+    let message = "לא ניתן ליצור קוד אימות. בדוק שה־TOTP הופעל בפרויקט Firebase.";
+    if (error.code === "auth/unverified-email") {
+      message = "שלחנו אימייל אימות. צריך לאמת את כתובת האימייל, לצאת ולהיכנס שוב.";
+      try {
+        await sendEmailVerification(user);
+      } catch (verificationError) {
+        console.warn("Email verification was not sent", verificationError);
+        message = "צריך לאמת את כתובת האימייל של המשתמש לפני הפעלת TOTP.";
+      }
+    }
+    setStatus(els.totpSetupStatus, message, true);
+  }
+}
+
+async function completeTotpEnrollment(event) {
+  event.preventDefault();
+  const user = auth.currentUser;
+  const code = els.totpSetupCode.value.trim();
+
+  if (!user || !state.totpSecret) return;
+  setStatus(els.totpSetupStatus, "מאמת קוד...");
+
+  try {
+    const assertion = TotpMultiFactorGenerator.assertionForEnrollment(state.totpSecret, code);
+    await multiFactor(user).enroll(assertion, "HR-AI Authenticator");
+    await user.getIdToken(true);
+    state.totpSecret = null;
+    setStatus(els.totpSetupStatus, "האימות הופעל בהצלחה.");
+    openApp(user);
+  } catch (error) {
+    console.error(error);
+    setStatus(els.totpSetupStatus, "הקוד לא אומת. בדוק שהזנת את הקוד העדכני מהאפליקציה.", true);
+  }
+}
+
+async function completeTotpSignIn(event) {
+  event.preventDefault();
+  const code = els.totpSignInCode.value.trim();
+  const resolver = state.mfaResolver;
+
+  if (!resolver) {
+    setStatus(els.totpSignInStatus, "פג תוקף תהליך האימות. נסה להתחבר שוב.", true);
+    return;
+  }
+
+  const hint = resolver.hints.find((item) => item.factorId === TotpMultiFactorGenerator.FACTOR_ID);
+  if (!hint) {
+    setStatus(els.totpSignInStatus, "לא נמצא אימות TOTP למשתמש הזה.", true);
+    return;
+  }
+
+  setStatus(els.totpSignInStatus, "מאמת קוד...");
+
+  try {
+    const assertion = TotpMultiFactorGenerator.assertionForSignIn(hint.uid, code);
+    await resolver.resolveSignIn(assertion);
+    state.mfaResolver = null;
+    els.totpSignInCode.value = "";
+    setStatus(els.totpSignInStatus, "");
+  } catch (error) {
+    console.error(error);
+    setStatus(els.totpSignInStatus, "קוד שגוי או שפג תוקפו. נסה את הקוד החדש שמופיע באפליקציה.", true);
+  }
+}
+
+async function setUserProfile(user) {
+  els.userDisplayName.textContent = user.displayName || user.email || "מגייס";
+  els.userRole.textContent = "מגייס";
+  els.userEmail.textContent = user.email || "-";
+
+  try {
+    const profileSnapshot = await getDoc(doc(db, "recruiters", user.uid));
+    if (!profileSnapshot.exists()) return;
+
+    const profile = profileSnapshot.data();
+    els.userDisplayName.textContent = profile.displayName || user.displayName || user.email || "מגייס";
+    els.userRole.textContent = profile.role || "מגייס";
+    els.userEmail.textContent = profile.email || user.email || "-";
+  } catch (error) {
+    console.warn("Recruiter profile was not loaded", error);
+  }
+}
 
 function startCandidatesListener() {
   stopCandidatesListener();

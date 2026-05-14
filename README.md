@@ -19,12 +19,46 @@
 
 1. Authentication -> Sign-in method -> Email/Password
 2. ליצור משתמש מגייס ראשון
-3. לפרסם את `firestore.rules`
-4. לפרסם את `storage.rules`
+3. ליצור מסמך פרופיל למגייס ב־Firestore תחת `recruiters/{uid}`
+4. לפרסם את `firestore.rules`
+5. לפרסם את `storage.rules`
+
+## שם תצוגה למגייס
+
+כדי להציג שם אמיתי במקום אימייל:
+
+1. נכנסים ל־Firebase -> Authentication -> Users
+2. מעתיקים את ה־UID של המשתמש
+3. נכנסים ל־Firestore -> Data
+4. יוצרים Collection בשם `recruiters`
+5. יוצרים Document עם אותו UID
+6. מוסיפים שדות:
+
+```txt
+displayName: "דניאל אליהו"
+role: "מנהל מערכת"
+email: "deliyho@gmail.com"
+```
+
+אם אין מסמך כזה, הדאשבורד יציג את האימייל כגיבוי.
 
 ## הערה על אימות דו שלבי במייל
 
 Firebase Auth לא מספק כפתור מובנה של קוד חד־פעמי במייל עבור Email/Password בדאשבורד סטטי. כדי לעשות זאת נכון צריך להוסיף פונקציית שרת ששולחת קוד במייל ובודקת אותו לפני פתיחת הדאשבורד, או להשתמש ב־MFA מובנה של Firebase/Identity Platform כמו TOTP או SMS. כרגע הכניסה נעולה לפי משתמשי Firebase Auth, והשלב הבא הוא לבחור את שיטת ה־2FA.
+
+## אימות דו שלבי TOTP
+
+הדאשבורד כולל תמיכה ב־TOTP לאחר שמפעילים אותו בפרויקט Firebase דרך Identity Platform.
+
+בכניסה הראשונה של מגייס:
+
+1. המגייס נכנס עם אימייל וסיסמה
+2. אם עדיין אין לו TOTP, יוצג QR
+3. סורקים את ה־QR עם Google Authenticator / Microsoft Authenticator
+4. מזינים את הקוד הראשון
+5. מכאן והלאה כל כניסה תדרוש קוד TOTP
+
+אם Firebase דורש אימייל מאומת, הדאשבורד ינסה לשלוח אימייל אימות. אחרי האימות צריך לצאת ולהיכנס מחדש.
 
 ## הערה על AI
 
