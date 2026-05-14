@@ -7,18 +7,22 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   collection,
+  deleteDoc,
   doc,
   getFirestore,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
+  deleteObject,
   getDownloadURL,
   getStorage,
   ref,
+  uploadBytes,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 
 const firebaseConfig = {
@@ -45,6 +49,7 @@ const els = {
   userEmail: document.querySelector("#userEmail"),
   logoutButton: document.querySelector("#logoutButton"),
   refreshButton: document.querySelector("#refreshButton"),
+  addCandidateButton: document.querySelector("#addCandidateButton"),
   navButtons: [...document.querySelectorAll("[data-route]")],
   viewTitle: document.querySelector("#viewTitle"),
   kpiTotal: document.querySelector("#kpiTotal"),
@@ -76,9 +81,15 @@ const els = {
   saveCandidateButton: document.querySelector("#saveCandidateButton"),
   saveStatus: document.querySelector("#saveStatus"),
   openCvButton: document.querySelector("#openCvButton"),
+  deleteCandidateButton: document.querySelector("#deleteCandidateButton"),
   stageBar: document.querySelector("#stageBar"),
   historyList: document.querySelector("#historyList"),
   settingsPanel: document.querySelector("#settingsPanel"),
+  addCandidateModal: document.querySelector("#addCandidateModal"),
+  addCandidateForm: document.querySelector("#addCandidateForm"),
+  closeAddModalButton: document.querySelector("#closeAddModalButton"),
+  cancelAddCandidateButton: document.querySelector("#cancelAddCandidateButton"),
+  addCandidateStatus: document.querySelector("#addCandidateStatus"),
 };
 
 const labels = {
@@ -126,6 +137,11 @@ els.colorFilter.addEventListener("change", render);
 els.saveCandidateButton.addEventListener("click", saveCandidateUpdate);
 els.toggleStarButton.addEventListener("click", toggleSelectedStar);
 els.openCvButton.addEventListener("click", openSelectedCv);
+els.deleteCandidateButton.addEventListener("click", deleteSelectedCandidate);
+els.addCandidateButton.addEventListener("click", openAddCandidateModal);
+els.closeAddModalButton.addEventListener("click", closeAddCandidateModal);
+els.cancelAddCandidateButton.addEventListener("click", closeAddCandidateModal);
+els.addCandidateForm.addEventListener("submit", addManualCandidate);
 
 els.navButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -159,6 +175,12 @@ function startCandidatesListener() {
       state.candidates = snapshot.docs.map((item) => normalizeCandidate(item.id, item.data()));
       if (!state.selectedId && state.candidates.length) {
         state.selectedId = state.candidates[0].id;
+      }
+      if (state.selectedId && state.candidates.length && !state.candidates.some((candidate) => candidate.id === state.selectedId)) {
+        state.selectedId = state.candidates[0].id;
+      }
+      if (!state.candidates.length) {
+        state.selectedId = null;
       }
       render();
     },
@@ -211,6 +233,7 @@ function normalizeCandidate(id, data) {
     isStarred: Boolean(recruiter.isStarred || data.isStarred || data.referredBy || data.referralSource === "friend"),
     processStage: recruiter.processStage || data.processStage || "submitted",
     recruiterNote: recruiter.note || "",
+    referredBy: recruiter.referredBy || data.referredBy || "",
     history: Array.isArray(data.history) ? data.history : [],
   };
 }
@@ -311,7 +334,7 @@ function renderRows(routeConfig) {
       <td>
         <div class="candidate-name">
           <strong>${escapeHtml(candidate.fullName)} ${candidate.isStarred ? "★" : ""}</strong>
-          <span>${escapeHtml(candidate.phone)} · ${escapeHtml(candidate.city || "ללא עיר")}</span>
+          <span>${escapeHtml(candidate.phone)} · ${escapeHtml(candidate.city || "ללא עיר")}${candidate.referredBy ? ` · הומלץ ע״י ${escapeHtml(candidate.referredBy)}` : ""}</span>
         </div>
       </td>
       <td><span class="badge ${candidate.classification}">${labels[candidate.classification] || "אפור"}</span></td>
@@ -348,7 +371,14 @@ function renderDetail() {
   if (!candidate) return;
 
   els.detailTitle.textContent = candidate.fullName;
-  els.detailMeta.textContent = [candidate.phone, candidate.email, candidate.city].filter(Boolean).join(" · ");
+  els.detailMeta.textContent = [
+    candidate.phone,
+    candidate.email,
+    candidate.city,
+    candidate.referredBy ? `הומלץ ע״י ${candidate.referredBy}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   els.detailBadge.textContent = labels[candidate.classification] || "אפור";
   els.detailBadge.className = `badge ${candidate.classification}`;
   els.aiAlert.classList.toggle("hidden", candidate.aiStatus === "completed");
@@ -454,8 +484,151 @@ async function openSelectedCv() {
   }
 }
 
+function openAddCandidateModal() {
+  els.addCandidateForm.reset();
+  setStatus(els.addCandidateStatus, "");
+  els.addCandidateModal.showModal();
+}
+
+function closeAddCandidateModal() {
+  els.addCandidateModal.close();
+  setStatus(els.addCandidateStatus, "");
+}
+
+async function addManualCandidate(event) {
+  event.preventDefault();
+  const formData = new FormData(els.addCandidateForm);
+  const cvFile = formData.get("cvFile");
+  const candidateRef = doc(collection(db, "candidates"));
+  const candidateId = candidateRef.id;
+  const referredBy = String(formData.get("referredBy") || "").trim();
+  const note = String(formData.get("note") || "").trim();
+
+  setStatus(els.addCandidateStatus, "מוסיף מועמד...");
+
+  try {
+    let cvFileData = {};
+
+    if (cvFile instanceof File && cvFile.size > 0) {
+      validateCvFile(cvFile);
+      const storagePath = `candidate-cvs/${candidateId}/${Date.now()}-${safeFileName(cvFile.name)}`;
+      await uploadBytes(ref(storage, storagePath), cvFile, {
+        contentType: cvFile.type,
+        customMetadata: {
+          candidateId,
+          source: "dashboard-manual",
+        },
+      });
+      cvFileData = {
+        name: cvFile.name,
+        size: cvFile.size,
+        type: cvFile.type,
+        storagePath,
+      };
+    }
+
+    await setDoc(candidateRef, {
+      candidateId,
+      source: "dashboard-manual",
+      status: "new",
+      fullName: String(formData.get("fullName") || "").trim(),
+      phone: String(formData.get("phone") || "").trim(),
+      email: String(formData.get("email") || "").trim(),
+      city: String(formData.get("city") || "").trim(),
+      age: null,
+      availability: String(formData.get("availability") || "לא ידוע"),
+      securityBackground: String(formData.get("securityBackground") || "לא ידוע"),
+      drivingLicense: String(formData.get("drivingLicense") || "לא ידוע"),
+      answers: {
+        motivation: "",
+        experience: note,
+      },
+      cvFile: cvFileData,
+      aiAnalysis: {
+        status: "missing",
+      },
+      recruiter: {
+        classification: "gray",
+        processStage: "submitted",
+        note,
+        isStarred: Boolean(referredBy),
+        referredBy,
+        updatedAt: serverTimestamp(),
+      },
+      referredBy,
+      referralSource: referredBy ? "friend" : "",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      history: [
+        {
+          label: referredBy ? `נוסף ידנית והומלץ ע״י ${referredBy}` : "נוסף ידנית על ידי מגייס",
+          at: new Date().toISOString(),
+        },
+      ],
+    });
+
+    state.selectedId = candidateId;
+    setStatus(els.addCandidateStatus, "המועמד נוסף בהצלחה.");
+    setTimeout(closeAddCandidateModal, 650);
+  } catch (error) {
+    console.error(error);
+    setStatus(els.addCandidateStatus, error.message || "לא ניתן להוסיף מועמד. בדוק הרשאות.", true);
+  }
+}
+
+async function deleteSelectedCandidate() {
+  const candidate = getSelectedCandidate();
+  if (!candidate) return;
+
+  const confirmed = window.confirm(`למחוק את ${candidate.fullName} מהמאגר? הפעולה אינה הפיכה.`);
+  if (!confirmed) return;
+
+  setStatus(els.saveStatus, "מוחק מועמד...");
+
+  try {
+    if (candidate.cvFile?.storagePath) {
+      try {
+        await deleteObject(ref(storage, candidate.cvFile.storagePath));
+      } catch (storageError) {
+        if (storageError.code !== "storage/object-not-found") {
+          throw storageError;
+        }
+      }
+    }
+
+    await deleteDoc(doc(db, "candidates", candidate.id));
+    state.selectedId = state.candidates.find((item) => item.id !== candidate.id)?.id || null;
+    setStatus(els.saveStatus, "");
+  } catch (error) {
+    console.error(error);
+    setStatus(els.saveStatus, "לא ניתן למחוק. בדוק הרשאות Firestore / Storage.", true);
+  }
+}
+
 function getSelectedCandidate() {
   return state.candidates.find((candidate) => candidate.id === state.selectedId);
+}
+
+function validateCvFile(file) {
+  const allowedTypes = [
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ];
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error("אפשר להעלות רק PDF, DOC או DOCX.");
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    throw new Error("קובץ קורות החיים חייב להיות עד 8MB.");
+  }
+}
+
+function safeFileName(fileName) {
+  return fileName
+    .trim()
+    .replace(/[^\w.\-\u0590-\u05ff]+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 120);
 }
 
 function setStatus(element, message, isError = false) {

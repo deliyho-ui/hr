@@ -8,6 +8,11 @@
   </head>
   <body>
     <section class="login-view" id="loginView" aria-labelledby="loginTitle">
+      <div class="login-visual" aria-hidden="true">
+        <div class="login-visual__mark">HR</div>
+        <strong>מערכת ניהול גיוס</strong>
+        <span>מאגר מועמדים, שאלונים וקורות חיים במקום אחד</span>
+      </div>
       <form class="login-card" id="loginForm">
         <p class="eyebrow">HR-AI</p>
         <h1 id="loginTitle">כניסה למערכת גיוס</h1>
@@ -59,6 +64,7 @@
             <h1 id="viewTitle">דאשבורד ראשי</h1>
           </div>
           <div class="topbar-actions">
+            <button class="button button-primary" id="addCandidateButton" type="button">הוספת מועמד</button>
             <button class="button button-secondary" id="refreshButton" type="button">רענון נתונים</button>
           </div>
         </header>
@@ -201,6 +207,12 @@
                 <p class="status-line" id="saveStatus" role="status" aria-live="polite"></p>
               </section>
 
+              <section class="detail-section danger-zone">
+                <h3>מחיקת מועמד</h3>
+                <p>מחיקה תסיר את כרטיס המועמד מהמאגר. אם קיים קובץ קורות חיים, המערכת תנסה למחוק גם אותו מהאחסון.</p>
+                <button class="button button-danger" id="deleteCandidateButton" type="button">מחיקת מועמד</button>
+              </section>
+
               <section class="detail-section">
                 <h3>קורות חיים</h3>
                 <button class="button button-secondary" id="openCvButton" type="button">פתיחת קובץ</button>
@@ -251,6 +263,84 @@
         </section>
       </main>
     </div>
+
+    <dialog class="modal" id="addCandidateModal" aria-labelledby="addCandidateTitle">
+      <form class="modal-card" id="addCandidateForm" method="dialog">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">הוספה ידנית</p>
+            <h2 id="addCandidateTitle">הוספת מועמד למאגר</h2>
+          </div>
+          <button class="icon-button" id="closeAddModalButton" type="button" aria-label="סגירה">×</button>
+        </div>
+
+        <div class="modal-grid">
+          <label>
+            <span>שם מלא</span>
+            <input name="fullName" required />
+          </label>
+          <label>
+            <span>טלפון</span>
+            <input name="phone" inputmode="tel" required />
+          </label>
+          <label>
+            <span>אימייל</span>
+            <input name="email" type="email" />
+          </label>
+          <label>
+            <span>עיר</span>
+            <input name="city" />
+          </label>
+          <label>
+            <span>הומלץ ע״י</span>
+            <input name="referredBy" placeholder="שם הממליץ/ה" />
+          </label>
+          <label>
+            <span>זמינות</span>
+            <select name="availability">
+              <option>לא ידוע</option>
+              <option>מיידית</option>
+              <option>עד חודש</option>
+              <option>חודש עד שלושה חודשים</option>
+              <option>מעל שלושה חודשים</option>
+            </select>
+          </label>
+          <label>
+            <span>רקע צבאי / ביטחוני</span>
+            <select name="securityBackground">
+              <option>לא ידוע</option>
+              <option>שירות קרבי</option>
+              <option>שירות תומך לחימה</option>
+              <option>רקע ביטחוני אזרחי</option>
+              <option>ללא רקע רלוונטי</option>
+            </select>
+          </label>
+          <label>
+            <span>רישיון נהיגה</span>
+            <select name="drivingLicense">
+              <option>לא ידוע</option>
+              <option>כן</option>
+              <option>לא</option>
+              <option>בתהליך</option>
+            </select>
+          </label>
+          <label class="wide">
+            <span>הערת פתיחה</span>
+            <textarea name="note" rows="3" placeholder="מידע שהגיע מהממליץ או מהמגייס"></textarea>
+          </label>
+          <label class="wide upload-inline">
+            <span>קורות חיים (אופציונלי)</span>
+            <input name="cvFile" type="file" accept=".pdf,.doc,.docx" />
+          </label>
+        </div>
+
+        <p class="status-line" id="addCandidateStatus" role="status" aria-live="polite"></p>
+        <div class="modal-actions">
+          <button class="button button-secondary" id="cancelAddCandidateButton" type="button">ביטול</button>
+          <button class="button button-primary" type="submit">הוספה למאגר</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="./app.js"></script>
   </body>

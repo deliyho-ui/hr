@@ -60,9 +60,69 @@ textarea:focus-visible {
 .login-view {
   min-height: 100dvh;
   display: grid;
-  place-items: center;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(320px, 440px);
+  place-content: center;
+  align-items: stretch;
+  gap: 18px;
   padding: 24px;
-  background: linear-gradient(180deg, #e9f2fb, #f7f9fc);
+  background:
+    radial-gradient(circle at 78% 18%, rgba(15, 95, 140, 0.18), transparent 28%),
+    linear-gradient(180deg, #e9f2fb, #f7f9fc);
+}
+
+.login-visual {
+  width: min(500px, 100%);
+  display: grid;
+  align-content: end;
+  gap: 10px;
+  padding: 30px;
+  border: 1px solid rgba(219, 227, 238, 0.8);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(145deg, rgba(16, 24, 40, 0.92), rgba(15, 95, 140, 0.82)),
+    #101828;
+  color: #fff;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: relative;
+}
+
+.login-visual::before {
+  content: "";
+  position: absolute;
+  inset: auto -24px -58px -24px;
+  height: 150px;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 1px, transparent 1px 44px);
+  transform: rotate(-7deg);
+}
+
+.login-visual__mark {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--primary);
+  font-weight: 900;
+  position: relative;
+}
+
+.login-visual strong,
+.login-visual span {
+  position: relative;
+}
+
+.login-visual strong {
+  font-size: 2rem;
+}
+
+.login-visual span {
+  max-width: 330px;
+  color: #dbeafe;
+  line-height: 1.6;
 }
 
 .login-card {
@@ -145,6 +205,15 @@ textarea {
   background: #fff;
   border-color: var(--line-strong);
   color: var(--ink);
+}
+
+.button-danger {
+  background: var(--red);
+  color: #fff;
+}
+
+.button-danger:hover {
+  background: #8f1d14;
 }
 
 .button-ghost {
@@ -252,6 +321,12 @@ textarea {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .topbar h1 {
@@ -461,6 +536,17 @@ tbody tr.active {
   color: #334155;
 }
 
+.danger-zone {
+  padding: 14px;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius);
+  background: #fff7f6;
+}
+
+.danger-zone h3 {
+  color: var(--red);
+}
+
 .answers {
   display: grid;
   gap: 10px;
@@ -549,6 +635,69 @@ tbody tr.active {
   color: var(--muted);
 }
 
+.modal {
+  width: min(760px, calc(100vw - 28px));
+  max-height: calc(100dvh - 28px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+}
+
+.modal::backdrop {
+  background: rgba(16, 24, 40, 0.46);
+  backdrop-filter: blur(3px);
+}
+
+.modal-card {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.28);
+}
+
+.modal-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.modal-head h2 {
+  margin: 0;
+}
+
+.icon-button {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.upload-inline input {
+  padding: 9px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 @media (max-width: 1180px) {
   .app {
     grid-template-columns: 1fr;
@@ -583,6 +732,7 @@ tbody tr.active {
   }
 
   .topbar,
+  .topbar-actions,
   .panel-header,
   .filters {
     flex-direction: column;
@@ -597,7 +747,16 @@ tbody tr.active {
   .nav,
   .action-grid,
   .settings-grid,
+  .modal-grid,
   .stage-bar {
     grid-template-columns: 1fr;
+  }
+
+  .login-view {
+    grid-template-columns: 1fr;
+  }
+
+  .login-visual {
+    min-height: 220px;
   }
 }

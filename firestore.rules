@@ -3,9 +3,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /candidates/{candidateId} {
-      allow create: if isValidLandingCreate(candidateId);
-      allow read, update: if isSignedInRecruiter();
-      allow delete: if false;
+      allow create: if isValidLandingCreate(candidateId) || isSignedInRecruiter();
+      allow read, update, delete: if isSignedInRecruiter();
     }
 
     match /settings/{documentId} {
