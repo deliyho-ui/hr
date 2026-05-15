@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>HR-AI | מערכת ניהול גיוס</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -112,10 +113,21 @@
           </div>
           <div class="topbar-actions">
             <button class="button button-primary" id="addCandidateButton" type="button">הוספת מועמד</button>
+            <button class="button button-secondary" id="analyzeMissingButton" type="button">ניתוח חסרי AI</button>
             <button class="button button-secondary" id="exportCsvButton" type="button">ייצוא CSV</button>
             <button class="button button-secondary" id="refreshButton" type="button">רענון נתונים</button>
           </div>
         </header>
+
+        <section class="batch-progress hidden" id="batchProgress" aria-live="polite">
+          <div>
+            <strong>ניתוח מועמדים</strong>
+            <span id="batchProgressText">מכין ניתוח...</span>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <span id="batchProgressFill"></span>
+          </div>
+        </section>
 
         <section class="kpi-grid" aria-label="מדדי גיוס">
           <article class="kpi">

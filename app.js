@@ -69,6 +69,10 @@ const els = {
   logoutButton: document.querySelector("#logoutButton"),
   refreshButton: document.querySelector("#refreshButton"),
   addCandidateButton: document.querySelector("#addCandidateButton"),
+  analyzeMissingButton: document.querySelector("#analyzeMissingButton"),
+  batchProgress: document.querySelector("#batchProgress"),
+  batchProgressText: document.querySelector("#batchProgressText"),
+  batchProgressFill: document.querySelector("#batchProgressFill"),
   exportCsvButton: document.querySelector("#exportCsvButton"),
   navButtons: [...document.querySelectorAll("[data-route]")],
   viewTitle: document.querySelector("#viewTitle"),
@@ -159,6 +163,7 @@ const state = {
   auditUnsubscribe: null,
   mfaResolver: null,
   totpSecret: null,
+  isBatchAnalyzing: false,
 };
 
 els.loginForm.addEventListener("submit", async (event) => {
@@ -186,6 +191,7 @@ els.mfaVerifyForm.addEventListener("submit", completeTotpSignIn);
 els.cancelTotpSetupButton.addEventListener("click", () => signOut(auth));
 els.cancelTotpSignInButton.addEventListener("click", resetToLogin);
 els.refreshButton.addEventListener("click", () => render());
+els.analyzeMissingButton.addEventListener("click", analyzeMissingCandidates);
 els.searchInput.addEventListener("input", render);
 els.colorFilter.addEventListener("change", render);
 els.saveCandidateButton.addEventListener("click", saveCandidateUpdate);
@@ -570,6 +576,7 @@ function renderKpis() {
   els.kpiManual.textContent = manual;
   els.kpiMissingAi.textContent = missingAi;
   els.kpiStars.textContent = stars;
+  els.analyzeMissingButton.disabled = state.isBatchAnalyzing || missingAi === 0;
 }
 
 function renderRows(routeConfig) {
@@ -860,6 +867,69 @@ async function analyzeSelectedCandidate() {
   setStatus(els.saveStatus, "שולח לניתוח AI...");
   els.analyzeCandidateButton.disabled = true;
   els.analyzeCandidateButton.textContent = "בניתוח...";
+
+  const result = await analyzeCandidate(candidate);
+  if (result.ok) {
+    await logAudit("ai_analyze", `ניתוח AI: ${candidate.fullName}`, candidate);
+    setStatus(els.saveStatus, "ניתוח AI הושלם.");
+  } else {
+    setStatus(els.saveStatus, `ניתוח AI נכשל: ${result.error}`, true);
+  }
+
+  els.analyzeCandidateButton.disabled = false;
+  els.analyzeCandidateButton.textContent = "ניתוח AI";
+}
+
+async function analyzeMissingCandidates() {
+  const candidates = state.candidates.filter((candidate) =>
+    candidate.aiStatus !== "completed" && candidate.aiStatus !== "pending"
+  );
+
+  if (!candidates.length) {
+    window.alert("אין מועמדים שחסר להם ניתוח AI.");
+    return;
+  }
+
+  const shouldAnalyze = window.confirm(`להריץ ניתוח AI ל-${candidates.length} מועמדים?`);
+  if (!shouldAnalyze) return;
+
+  state.isBatchAnalyzing = true;
+  els.analyzeMissingButton.disabled = true;
+  els.analyzeMissingButton.textContent = "מנתח...";
+  els.batchProgress.classList.remove("hidden");
+  updateBatchProgress(0, candidates.length, "מתחיל ניתוח...");
+
+  let completed = 0;
+  let failed = 0;
+
+  for (const candidate of candidates) {
+    updateBatchProgress(completed + failed, candidates.length, `מנתח: ${candidate.fullName}`);
+    const result = await analyzeCandidate(candidate);
+    if (result.ok) {
+      completed += 1;
+      await logAudit("ai_analyze_batch", `ניתוח AI באצווה: ${candidate.fullName}`, candidate);
+    } else {
+      failed += 1;
+      console.warn(`Batch AI analysis failed for ${candidate.id}`, result.error);
+    }
+    updateBatchProgress(completed + failed, candidates.length, `הושלמו ${completed}, נכשלו ${failed}`);
+  }
+
+  updateBatchProgress(candidates.length, candidates.length, `הסתיים: ${completed} נותחו, ${failed} נכשלו.`);
+  await logAudit("ai_analyze_batch_done", `ניתוח חסרי AI הסתיים: ${completed} נותחו, ${failed} נכשלו`);
+
+  window.setTimeout(() => {
+    els.batchProgress.classList.add("hidden");
+    els.analyzeMissingButton.textContent = "ניתוח חסרי AI";
+    state.isBatchAnalyzing = false;
+    render();
+  }, 2200);
+}
+
+async function analyzeCandidate(candidate) {
+  const user = auth.currentUser;
+  if (!candidate || !user) return { ok: false, error: "אין משתמש מחובר או מועמד נבחר." };
+
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), AI_CLIENT_TIMEOUT_MS);
 
@@ -888,18 +958,21 @@ async function analyzeSelectedCandidate() {
       throw new Error(result.error || "AI analysis failed");
     }
 
-    await logAudit("ai_analyze", `ניתוח AI: ${candidate.fullName}`, candidate);
-    setStatus(els.saveStatus, "ניתוח AI הושלם.");
+    return { ok: true };
   } catch (error) {
     console.error(error);
     const message = getAnalysisErrorMessage(error);
     await markAnalysisFailed(candidate, message);
-    setStatus(els.saveStatus, `ניתוח AI נכשל: ${message}`, true);
+    return { ok: false, error: message };
   } finally {
     window.clearTimeout(timeoutId);
-    els.analyzeCandidateButton.disabled = false;
-    els.analyzeCandidateButton.textContent = "ניתוח AI";
   }
+}
+
+function updateBatchProgress(done, total, message) {
+  const percentage = total > 0 ? Math.round((done / total) * 100) : 0;
+  els.batchProgressText.textContent = `${message} (${done}/${total})`;
+  els.batchProgressFill.style.width = `${percentage}%`;
 }
 
 async function markAnalysisFailed(candidate, message) {

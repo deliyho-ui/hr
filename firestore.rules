@@ -3,7 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /candidates/{candidateId} {
-      allow create: if isValidLandingCreate(candidateId) || isSignedInRecruiter();
+      allow create: if isValidCandidateCreate(candidateId) || isSignedInRecruiter();
       allow read, update, delete: if isSignedInRecruiter();
     }
 
@@ -30,7 +30,7 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isValidLandingCreate(candidateId) {
+    function isValidCandidateCreate(candidateId) {
       let data = request.resource.data;
       return data.candidateId == candidateId
         && data.source == "qr-landing-page"
@@ -38,24 +38,51 @@ service cloud.firestore {
         && data.fullName is string
         && data.fullName.size() >= 2
         && data.fullName.size() <= 120
+        && data.idNumber is string
+        && data.idNumber.size() >= 7
+        && data.idNumber.size() <= 12
         && data.phone is string
         && data.phone.size() >= 8
         && data.phone.size() <= 30
         && data.email is string
         && data.email.size() <= 160
+        && data.address is string
+        && data.address.size() >= 4
+        && data.address.size() <= 200
         && data.city is string
-        && data.city.size() <= 80
+        && data.city.size() <= 200
+        && data.birthDate is string
+        && data.birthDate.size() >= 8
+        && data.birthDate.size() <= 16
         && data.age is number
         && data.age >= 18
         && data.age <= 65
+        && data.maritalStatus is string
+        && data.maritalStatus.size() <= 40
         && data.availability is string
+        && data.availability.size() <= 1200
         && data.securityBackground is string
+        && data.securityBackground.size() <= 2000
         && data.drivingLicense is string
         && data.answers is map
-        && data.answers.motivation is string
-        && data.answers.motivation.size() <= 2000
-        && data.answers.experience is string
-        && data.answers.experience.size() <= 2000
+        && data.answers.serviceCommitment is string
+        && data.answers.serviceCommitment.size() <= 80
+        && data.answers.studentStatus is string
+        && data.answers.studentStatus.size() <= 80
+        && data.answers.medicalLimitation is string
+        && data.answers.medicalLimitation.size() <= 80
+        && data.answers.militaryService is string
+        && data.answers.militaryService.size() <= 2000
+        && data.answers.riflemanLevel is string
+        && data.answers.riflemanLevel.matches("^(02|03|04|05|06|07|08|09|10|11|12)$")
+        && data.answers.commandExperience is string
+        && data.answers.commandExperience.size() <= 2000
+        && data.answers.foreignCitizenship is string
+        && data.answers.foreignCitizenship.size() <= 1200
+        && data.answers.drivingLicense is string
+        && data.answers.drivingLicense.size() <= 80
+        && data.answers.availability is string
+        && data.answers.availability.size() <= 1200
         && data.cvFile is map
         && data.cvFile.name is string
         && data.cvFile.type is string
