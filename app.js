@@ -21,6 +21,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  arrayUnion,
   setDoc,
   updateDoc,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
@@ -98,10 +99,7 @@ const els = {
   aiStrengths: document.querySelector("#aiStrengths"),
   aiRisks: document.querySelector("#aiRisks"),
   aiQuestions: document.querySelector("#aiQuestions"),
-  detailBackground: document.querySelector("#detailBackground"),
-  detailLicense: document.querySelector("#detailLicense"),
-  detailMotivation: document.querySelector("#detailMotivation"),
-  detailExperience: document.querySelector("#detailExperience"),
+  detailQuestionnaire: document.querySelector("#detailQuestionnaire"),
   manualClassification: document.querySelector("#manualClassification"),
   processStage: document.querySelector("#processStage"),
   recruiterNote: document.querySelector("#recruiterNote"),
@@ -143,6 +141,21 @@ const labels = {
 
 const AI_CLIENT_TIMEOUT_MS = 65000;
 const AI_PENDING_STALE_MS = 2 * 60 * 1000;
+const HISTORY_DISPLAY_LIMIT = 50;
+
+const ANSWER_LABELS = {
+  serviceCommitment: "נכונות להתחייבות 5 שנים",
+  studentStatus: "סטודנט/ית",
+  medicalLimitation: "מגבלה רפואית",
+  militaryService: "שירות צבאי",
+  riflemanLevel: "רובאי",
+  commandExperience: "ניסיון פיקודי / הדרכה",
+  foreignCitizenship: "אזרחות זרה",
+  drivingLicense: "רישיון נהיגה (שאלון)",
+  availability: "זמינות (שאלון)",
+  motivation: "מה מושך בתפקיד",
+  experience: "ניסיון רלוונטי",
+};
 
 const stageLabels = {
   submitted: "הוגש",
@@ -489,8 +502,17 @@ function normalizeCandidate(id, data) {
     processStage: recruiter.processStage || data.processStage || "submitted",
     recruiterNote: recruiter.note || "",
     referredBy: recruiter.referredBy || data.referredBy || "",
-    history: Array.isArray(data.history) ? data.history : [],
+    history: Array.isArray(data.history) ? data.history.slice(-HISTORY_DISPLAY_LIMIT) : [],
+    answers: data.answers && typeof data.answers === "object" ? data.answers : {},
+    address: data.address || "",
+    birthDate: data.birthDate || "",
+    maritalStatus: data.maritalStatus || "",
+    idNumber: data.idNumber || "",
   };
+}
+
+function needsAiAnalysis(candidate) {
+  return candidate.aiStatus !== "completed" && candidate.aiStatus !== "pending";
 }
 
 function render() {
@@ -568,7 +590,7 @@ function renderKpis() {
   const total = state.candidates.length;
   const green = state.candidates.filter((candidate) => candidate.classification === "green").length;
   const manual = state.candidates.filter((candidate) => ["gray", "orange"].includes(candidate.classification)).length;
-  const missingAi = state.candidates.filter((candidate) => candidate.aiStatus !== "completed").length;
+  const missingAi = state.candidates.filter(needsAiAnalysis).length;
   const stars = state.candidates.filter((candidate) => candidate.isStarred).length;
 
   els.kpiTotal.textContent = total;
@@ -645,10 +667,7 @@ function renderDetail() {
   els.aiStrengths.textContent = candidate.strengths.length ? candidate.strengths.join(" · ") : "-";
   els.aiRisks.textContent = candidate.risks.length ? candidate.risks.join(" · ") : "-";
   els.aiQuestions.textContent = candidate.questionsToAsk.length ? candidate.questionsToAsk.join(" · ") : "-";
-  els.detailBackground.textContent = candidate.securityBackground || "-";
-  els.detailLicense.textContent = candidate.drivingLicense || "-";
-  els.detailMotivation.textContent = candidate.motivation || "-";
-  els.detailExperience.textContent = candidate.experience || "-";
+  renderQuestionnaire(candidate);
   els.manualClassification.value = candidate.classification;
   els.processStage.value = candidate.processStage;
   els.recruiterNote.value = candidate.recruiterNote;
@@ -709,10 +728,68 @@ function renderHistory(history) {
     return;
   }
   els.historyList.innerHTML = history
-    .slice()
+    .slice(-HISTORY_DISPLAY_LIMIT)
     .reverse()
     .map((item) => `<li>${escapeHtml(item.label || "עדכון")} · ${formatDate(item.at)}</li>`)
     .join("");
+}
+
+function renderQuestionnaire(candidate) {
+  const rows = [];
+  const pushRow = (label, value) => {
+    const text = String(value ?? "").trim();
+    if (text) rows.push([label, text]);
+  };
+
+  pushRow("תעודת זהות", candidate.idNumber);
+  pushRow("כתובת", candidate.address);
+  if (candidate.birthDate) {
+    pushRow("תאריך לידה", candidate.age ? `${candidate.birthDate} (גיל ${candidate.age})` : candidate.birthDate);
+  }
+  pushRow("מצב משפחתי", candidate.maritalStatus);
+  pushRow("זמינות", candidate.availability);
+
+  const answers = candidate.answers || {};
+  const renderedAnswerKeys = new Set();
+
+  for (const [key, label] of Object.entries(ANSWER_LABELS)) {
+    const value = answers[key];
+    if (value) {
+      pushRow(label, value);
+      renderedAnswerKeys.add(key);
+    }
+  }
+
+  for (const [key, value] of Object.entries(answers)) {
+    if (renderedAnswerKeys.has(key)) continue;
+    pushRow(key, value);
+  }
+
+  if (!answers.militaryService && candidate.securityBackground) {
+    pushRow("שירות צבאי / רקע", candidate.securityBackground);
+  }
+  if (!answers.drivingLicense && candidate.drivingLicense) {
+    pushRow("רישיון נהיגה", candidate.drivingLicense);
+  }
+
+  if (!rows.length) {
+    els.detailQuestionnaire.innerHTML = `<dd>אין נתוני שאלון</dd>`;
+    return;
+  }
+
+  els.detailQuestionnaire.innerHTML = rows
+    .map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`)
+    .join("");
+}
+
+async function appendHistoryEntry(candidateId, label) {
+  await updateDoc(doc(db, "candidates", candidateId), {
+    history: arrayUnion({
+      label,
+      at: new Date().toISOString(),
+    }),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 function renderAuditLogs() {
@@ -811,18 +888,15 @@ async function saveCandidateUpdate() {
       isStarred: candidate.isStarred,
       updatedAt: serverTimestamp(),
     },
-    history: [
-      ...candidate.history,
-      {
-        label: `עדכון מגייס: ${labels[els.manualClassification.value]} / ${stageLabels[els.processStage.value]}`,
-        at: new Date().toISOString(),
-      },
-    ],
     updatedAt: serverTimestamp(),
   };
 
   try {
     await updateDoc(doc(db, "candidates", candidate.id), update);
+    await appendHistoryEntry(
+      candidate.id,
+      `עדכון מגייס: ${labels[els.manualClassification.value]} / ${stageLabels[els.processStage.value]}`
+    );
     await logAudit("candidate_update", `עדכון מועמד: ${candidate.fullName}`, candidate);
     setStatus(els.saveStatus, "נשמר בהצלחה.");
   } catch (error) {
@@ -840,14 +914,11 @@ async function toggleSelectedStar() {
       "recruiter.isStarred": !candidate.isStarred,
       "recruiter.updatedAt": serverTimestamp(),
       updatedAt: serverTimestamp(),
-      history: [
-        ...candidate.history,
-        {
-          label: !candidate.isStarred ? "סומן בכוכב" : "הוסר סימון כוכב",
-          at: new Date().toISOString(),
-        },
-      ],
     });
+    await appendHistoryEntry(
+      candidate.id,
+      !candidate.isStarred ? "סומן בכוכב" : "הוסר סימון כוכב"
+    );
     await logAudit(
       !candidate.isStarred ? "candidate_star" : "candidate_unstar",
       !candidate.isStarred ? `סימון כוכב: ${candidate.fullName}` : `הסרת כוכב: ${candidate.fullName}`,
@@ -881,9 +952,7 @@ async function analyzeSelectedCandidate() {
 }
 
 async function analyzeMissingCandidates() {
-  const candidates = state.candidates.filter((candidate) =>
-    candidate.aiStatus !== "completed" && candidate.aiStatus !== "pending"
-  );
+  const candidates = state.candidates.filter(needsAiAnalysis);
 
   if (!candidates.length) {
     window.alert("אין מועמדים שחסר להם ניתוח AI.");
