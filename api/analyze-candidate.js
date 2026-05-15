@@ -3,23 +3,49 @@ const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 
 const MAX_CV_CHARS = 18000;
-const DEFAULT_AI_MODEL = "claude-sonnet-4-20250514";
+const AI_REQUEST_TIMEOUT_MS = 45000;
+const DEFAULT_AI_MODEL = "claude-haiku-4-5-20251001";
 const DEFAULT_ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const DEFAULT_ANTHROPIC_VERSION = "2023-06-01";
 
 function initFirebaseAdmin() {
   if (admin.apps.length) return admin.app();
 
-  const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  const base64Json = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
-  const serviceAccount = rawJson
-    ? JSON.parse(rawJson)
-    : JSON.parse(Buffer.from(base64Json || "", "base64").toString("utf8"));
-
+  const serviceAccount = getFirebaseServiceAccount();
   return admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "hr-ai-50d43.firebasestorage.app",
   });
+}
+
+function getFirebaseServiceAccount() {
+  const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  const base64Json = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+
+  if (rawJson?.trim()) {
+    return parseServiceAccountJson(rawJson, "FIREBASE_SERVICE_ACCOUNT_JSON");
+  }
+
+  if (base64Json?.trim()) {
+    const decoded = Buffer.from(base64Json, "base64").toString("utf8");
+    return parseServiceAccountJson(decoded, "FIREBASE_SERVICE_ACCOUNT_BASE64");
+  }
+
+  throw new Error(
+    "Missing Firebase Admin credentials. Add FIREBASE_SERVICE_ACCOUNT_JSON to Vercel with the full downloaded service-account JSON."
+  );
+}
+
+function parseServiceAccountJson(value, sourceName) {
+  try {
+    const serviceAccount = JSON.parse(value);
+    if (serviceAccount.private_key) {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
+    }
+    return serviceAccount;
+  } catch (error) {
+    throw new Error(`${sourceName} is not valid JSON. Paste the full service-account .json file content, not the Admin SDK code snippet.`);
+  }
 }
 
 function getBearerToken(req) {
@@ -153,25 +179,39 @@ async function analyzeWithAi(candidate, settings, cvText) {
   const anthropicVersion = process.env.ANTHROPIC_VERSION || DEFAULT_ANTHROPIC_VERSION;
   const prompt = buildPrompt(candidate, settings, cvText);
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": anthropicVersion,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: Number(process.env.ANTHROPIC_MAX_TOKENS || 1800),
-      temperature: 0.2,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.ANTHROPIC_TIMEOUT_MS || AI_REQUEST_TIMEOUT_MS));
+
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": anthropicVersion,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: Number(process.env.ANTHROPIC_MAX_TOKENS || 1800),
+        temperature: 0.2,
+        messages: [
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+      }),
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("Claude request timed out. Try again or reduce the CV size.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {

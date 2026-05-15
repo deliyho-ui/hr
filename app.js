@@ -137,6 +137,9 @@ const labels = {
   red: "אדום",
 };
 
+const AI_CLIENT_TIMEOUT_MS = 65000;
+const AI_PENDING_STALE_MS = 2 * 60 * 1000;
+
 const stageLabels = {
   submitted: "הוגש",
   screened: "סינון",
@@ -436,7 +439,16 @@ function stopAuditListener() {
 function normalizeCandidate(id, data) {
   const ai = data.aiAnalysis || {};
   const recruiter = data.recruiter || {};
-  const aiStatus = ai.status || "missing";
+  const rawAiStatus = ai.status || "missing";
+  const aiStartedAt = toDate(ai.startedAt);
+  const isStalePending =
+    rawAiStatus === "pending" &&
+    aiStartedAt &&
+    Date.now() - aiStartedAt.getTime() > AI_PENDING_STALE_MS;
+  const aiStatus = isStalePending ? "failed" : rawAiStatus;
+  const aiError = isStalePending
+    ? "הניתוח נשאר במצב המתנה יותר מדי זמן. אפשר לנסות להריץ אותו שוב."
+    : String(ai.error || "");
   const hasAi = aiStatus === "completed";
   const manualClassification = recruiter.classification || data.manualClassification;
   const classification = manualClassification || (hasAi ? ai.classification : "gray") || "gray";
@@ -455,8 +467,10 @@ function normalizeCandidate(id, data) {
     motivation: data.answers?.motivation || "",
     experience: data.answers?.experience || "",
     cvFile: data.cvFile || {},
-    createdAt: data.createdAt?.toDate?.() || null,
+    createdAt: toDate(data.createdAt),
     aiStatus,
+    aiStartedAt,
+    aiError,
     hasAi,
     classification,
     score: ai.score ?? null,
@@ -618,7 +632,8 @@ function renderDetail() {
   els.detailBadge.textContent = labels[candidate.classification] || "אפור";
   els.detailBadge.className = `badge ${candidate.classification}`;
   els.aiAlert.classList.toggle("hidden", candidate.aiStatus === "completed");
-  els.aiSummary.textContent = candidate.summary || "אין ניתוח AI זמין. יש לעבור על השאלון וקורות החיים ידנית.";
+  updateAiAlert(candidate);
+  els.aiSummary.textContent = candidate.summary || getMissingAiSummary(candidate);
   els.aiRecommendation.textContent = candidate.recommendation || "";
   els.aiStrengths.textContent = candidate.strengths.length ? candidate.strengths.join(" · ") : "-";
   els.aiRisks.textContent = candidate.risks.length ? candidate.risks.join(" · ") : "-";
@@ -636,6 +651,41 @@ function renderDetail() {
   els.analyzeCandidateButton.textContent = candidate.aiStatus === "pending" ? "בניתוח..." : "ניתוח AI";
   renderStageBar(candidate.processStage);
   renderHistory(candidate.history);
+}
+
+function updateAiAlert(candidate) {
+  const title = els.aiAlert.querySelector("strong");
+  const message = els.aiAlert.querySelector("span");
+  if (!title || !message) return;
+
+  if (candidate.aiStatus === "pending") {
+    title.textContent = "ניתוח AI בתהליך";
+    message.textContent = "המערכת מעבדת את קורות החיים והשאלון. אם זה נמשך יותר מדי זמן, רענן ונסה שוב.";
+    return;
+  }
+
+  if (candidate.aiStatus === "failed") {
+    title.textContent = "ניתוח AI נכשל";
+    message.textContent = candidate.aiError || "אפשר להמשיך טיפול ידני או להריץ ניתוח מחדש.";
+    return;
+  }
+
+  title.textContent = "חסר ניתוח AI";
+  message.textContent = "המועמד מוצג לפי קורות החיים והשאלון בלבד. אפשר להמשיך טיפול ידני.";
+}
+
+function getMissingAiSummary(candidate) {
+  if (candidate.aiStatus === "pending") {
+    return "ניתוח AI עדיין בתהליך. אפשר להמתין או לחזור למועמד בעוד רגע.";
+  }
+
+  if (candidate.aiStatus === "failed") {
+    return candidate.aiError
+      ? `ניתוח AI נכשל: ${candidate.aiError}`
+      : "ניתוח AI נכשל. אפשר לעבור על השאלון וקורות החיים ידנית או להריץ מחדש.";
+  }
+
+  return "אין ניתוח AI זמין. יש לעבור על השאלון וקורות החיים ידנית.";
 }
 
 function renderStageBar(currentStage) {
@@ -810,11 +860,22 @@ async function analyzeSelectedCandidate() {
   setStatus(els.saveStatus, "שולח לניתוח AI...");
   els.analyzeCandidateButton.disabled = true;
   els.analyzeCandidateButton.textContent = "בניתוח...";
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), AI_CLIENT_TIMEOUT_MS);
 
   try {
-    const token = await user.getIdToken();
+    await setDoc(doc(db, "candidates", candidate.id), {
+      aiAnalysis: {
+        status: "pending",
+        startedAt: serverTimestamp(),
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+
+    const token = await user.getIdToken(true);
     const response = await fetch("/api/analyze-candidate", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -831,11 +892,36 @@ async function analyzeSelectedCandidate() {
     setStatus(els.saveStatus, "ניתוח AI הושלם.");
   } catch (error) {
     console.error(error);
-    setStatus(els.saveStatus, `ניתוח AI נכשל: ${error.message || "שגיאה לא ידועה"}`, true);
+    const message = getAnalysisErrorMessage(error);
+    await markAnalysisFailed(candidate, message);
+    setStatus(els.saveStatus, `ניתוח AI נכשל: ${message}`, true);
   } finally {
+    window.clearTimeout(timeoutId);
     els.analyzeCandidateButton.disabled = false;
     els.analyzeCandidateButton.textContent = "ניתוח AI";
   }
+}
+
+async function markAnalysisFailed(candidate, message) {
+  try {
+    await setDoc(doc(db, "candidates", candidate.id), {
+      aiAnalysis: {
+        status: "failed",
+        error: String(message || "שגיאה לא ידועה").slice(0, 500),
+        failedAt: serverTimestamp(),
+      },
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (error) {
+    console.warn("Could not save AI failure status", error);
+  }
+}
+
+function getAnalysisErrorMessage(error) {
+  if (error?.name === "AbortError") {
+    return "הניתוח לקח יותר מדי זמן ונעצר. נסה שוב, ואם זה חוזר ייתכן שקובץ קורות החיים כבד מדי.";
+  }
+  return error?.message || "שגיאה לא ידועה";
 }
 
 async function openSelectedCv() {
@@ -1087,12 +1173,16 @@ function setStatus(element, message, isError = false) {
   element.classList.toggle("error", isError);
 }
 
+function toDate(value) {
+  if (!value) return null;
+  const date = typeof value === "string" ? new Date(value) : value.toDate?.() || value;
+  return date instanceof Date && !Number.isNaN(date.valueOf()) ? date : null;
+}
+
 function formatDate(value) {
   if (!value) return "-";
-  const date = typeof value === "string" ? new Date(value) : value.toDate?.() || value;
-  return date instanceof Date && !Number.isNaN(date.valueOf())
-    ? date.toLocaleString("he-IL")
-    : "-";
+  const date = toDate(value);
+  return date ? date.toLocaleString("he-IL") : "-";
 }
 
 function escapeHtml(value) {

@@ -94,6 +94,8 @@ FIREBASE_SERVICE_ACCOUNT_JSON={...}
 
 אפשר להשתמש במקום זאת גם ב־`FIREBASE_SERVICE_ACCOUNT_BASE64` אם נוח יותר לשמור את JSON השירות כ־Base64.
 
+חשוב: `FIREBASE_SERVICE_ACCOUNT_JSON` הוא כל התוכן של קובץ ה־JSON שיורד מ־Firebase, לא קטע הקוד של Admin SDK. אם חסר המשתנה הזה או שהוא לא JSON תקין, הדאשבורד יטען מועמדים אבל ניתוח AI ייכשל.
+
 הקוד לא משתמש בחבילת SDK חיצונית ל־AI. הוא שולח בקשת HTTP רגילה ל־Anthropic Messages API. ברירת המחדל היא:
 
 ```txt
@@ -104,7 +106,49 @@ ANTHROPIC_MAX_TOKENS=1800
 
 ברוב המקרים מספיק להגדיר רק `ANTHROPIC_API_KEY`. קיימים גם שמות גיבוי למפתח ולמודל: `CLAUDE_API_KEY`, `CLAUDE_MODEL`, `AI_MODEL`.
 
+אם רוצים מודל זול ומהיר יותר, אפשר להגדיר:
+
+```txt
+ANTHROPIC_MODEL=claude-3-5-haiku-20241022
+```
+
+אם בוחרים מודל אחר מתוך Claude Console, יש להעתיק את שם המודל המדויק כפי שהוא מופיע שם. אם שם המודל לא נתמך ב־Anthropic Messages API, המועמד יסומן כ־`ניתוח נכשל` עם הודעת שגיאה.
+
 הפונקציה מאמתת את המשתמש עם Firebase Auth ID token, כך שרק משתמש מחובר לדאשבורד יכול להפעיל ניתוח.
+
+## בדיקת תקלות AI
+
+אם לחיצה על `ניתוח AI` לא מחזירה תוצאה:
+
+1. ב־Vercel נכנסים לפרויקט -> Logs.
+2. לוחצים שוב על `ניתוח AI` בדאשבורד.
+3. בודקים את השגיאה האחרונה.
+
+שגיאות נפוצות:
+
+```txt
+Missing Firebase Admin credentials
+```
+
+חסר `FIREBASE_SERVICE_ACCOUNT_JSON` או `FIREBASE_SERVICE_ACCOUNT_BASE64`.
+
+```txt
+FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON
+```
+
+הודבק קטע קוד במקום קובץ JSON מלא, או שה־JSON נשבר בזמן ההדבקה.
+
+```txt
+Missing Claude API key
+```
+
+חסר `ANTHROPIC_API_KEY` או `CLAUDE_API_KEY`.
+
+```txt
+AI provider request failed
+```
+
+בדרך כלל מפתח Claude שגוי, אין Billing/Credits, או שם מודל לא נתמך.
 
 ## הגדרות סף ל־AI
 
