@@ -82,6 +82,11 @@ const els = {
   kpiManual: document.querySelector("#kpiManual"),
   kpiMissingAi: document.querySelector("#kpiMissingAi"),
   kpiStars: document.querySelector("#kpiStars"),
+  kpiTotalDelta: document.querySelector("#kpiTotalDelta"),
+  kpiGreenDelta: document.querySelector("#kpiGreenDelta"),
+  kpiManualDelta: document.querySelector("#kpiManualDelta"),
+  kpiMissingAiDelta: document.querySelector("#kpiMissingAiDelta"),
+  kpiStarsDelta: document.querySelector("#kpiStarsDelta"),
   tableTitle: document.querySelector("#tableTitle"),
   tableSubtitle: document.querySelector("#tableSubtitle"),
   candidateRows: document.querySelector("#candidateRows"),
@@ -142,6 +147,7 @@ const labels = {
 const AI_CLIENT_TIMEOUT_MS = 65000;
 const AI_PENDING_STALE_MS = 2 * 60 * 1000;
 const HISTORY_DISPLAY_LIMIT = 50;
+const LAST_VISIT_STORAGE_PREFIX = "hr-ai-last-visit:";
 
 const ANSWER_LABELS = {
   serviceCommitment: "נכונות להתחייבות 5 שנים",
@@ -177,6 +183,7 @@ const state = {
   mfaResolver: null,
   totpSecret: null,
   isBatchAnalyzing: false,
+  visitBaselineMs: null,
 };
 
 els.loginForm.addEventListener("submit", async (event) => {
@@ -195,13 +202,20 @@ els.loginForm.addEventListener("submit", async (event) => {
   }
 });
 
-els.logoutButton.addEventListener("click", () => signOut(auth));
+els.logoutButton.addEventListener("click", () => {
+  persistLastVisit();
+  signOut(auth);
+});
+window.addEventListener("beforeunload", () => persistLastVisit());
 els.profileForm.addEventListener("submit", saveRecruiterProfile);
 els.screeningSettingsForm.addEventListener("submit", saveScreeningSettings);
 els.exportCsvButton.addEventListener("click", exportCandidatesCsv);
 els.mfaSetupForm.addEventListener("submit", completeTotpEnrollment);
 els.mfaVerifyForm.addEventListener("submit", completeTotpSignIn);
-els.cancelTotpSetupButton.addEventListener("click", () => signOut(auth));
+els.cancelTotpSetupButton.addEventListener("click", () => {
+  persistLastVisit();
+  signOut(auth);
+});
 els.cancelTotpSignInButton.addEventListener("click", resetToLogin);
 els.refreshButton.addEventListener("click", () => render());
 els.analyzeMissingButton.addEventListener("click", analyzeMissingCandidates);
@@ -267,6 +281,7 @@ function resetToLogin() {
 
 function openApp(user) {
   setUserProfile(user);
+  state.visitBaselineMs = user?.uid ? loadLastVisitMs(user.uid) : null;
   els.loginView.classList.add("hidden");
   els.appShell.classList.remove("hidden");
   startCandidatesListener();
@@ -515,6 +530,71 @@ function needsAiAnalysis(candidate) {
   return candidate.aiStatus !== "completed" && candidate.aiStatus !== "pending";
 }
 
+function getLastVisitStorageKey(uid) {
+  return `${LAST_VISIT_STORAGE_PREFIX}${uid}`;
+}
+
+function loadLastVisitMs(uid) {
+  const raw = localStorage.getItem(getLastVisitStorageKey(uid));
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function persistLastVisit() {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return;
+  localStorage.setItem(getLastVisitStorageKey(uid), String(Date.now()));
+}
+
+function isCandidateSinceLastVisit(candidate, sinceMs) {
+  if (!sinceMs || !candidate.createdAt) return false;
+  return candidate.createdAt.getTime() > sinceMs;
+}
+
+function getRecentCandidates() {
+  if (!state.visitBaselineMs) return [];
+  return state.candidates.filter((candidate) => isCandidateSinceLastVisit(candidate, state.visitBaselineMs));
+}
+
+function renderKpiDelta(element, count, label) {
+  if (!element) return;
+  if (!count || count <= 0 || state.visitBaselineMs === null) {
+    element.classList.add("hidden");
+    element.textContent = "";
+    element.removeAttribute("title");
+    return;
+  }
+
+  element.classList.remove("hidden");
+  element.textContent = `+${count}`;
+  element.title = `${count} ${label} מאז הכניסה האחרונה`;
+  element.setAttribute("aria-label", element.title);
+}
+
+function renderKpiDeltas(recent) {
+  renderKpiDelta(els.kpiTotalDelta, recent.length, "מועמדים חדשים");
+  renderKpiDelta(
+    els.kpiGreenDelta,
+    recent.filter((candidate) => candidate.classification === "green").length,
+    "מועמדים חדשים בירוק"
+  );
+  renderKpiDelta(
+    els.kpiManualDelta,
+    recent.filter((candidate) => ["gray", "orange"].includes(candidate.classification)).length,
+    "מועמדים חדשים לבדיקה"
+  );
+  renderKpiDelta(
+    els.kpiMissingAiDelta,
+    recent.filter(needsAiAnalysis).length,
+    "מועמדים חדשים ללא ניתוח AI"
+  );
+  renderKpiDelta(
+    els.kpiStarsDelta,
+    recent.filter((candidate) => candidate.isStarred).length,
+    "מועמדים חדשים מומלצים"
+  );
+}
+
 function render() {
   const routeConfig = getRouteConfig();
   els.viewTitle.textContent = routeConfig.title;
@@ -598,6 +678,7 @@ function renderKpis() {
   els.kpiManual.textContent = manual;
   els.kpiMissingAi.textContent = missingAi;
   els.kpiStars.textContent = stars;
+  renderKpiDeltas(getRecentCandidates());
   els.analyzeMissingButton.disabled = state.isBatchAnalyzing || missingAi === 0;
 }
 
